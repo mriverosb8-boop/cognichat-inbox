@@ -6,6 +6,7 @@ import { avatarGradientClass, initials } from "@/lib/avatar";
 import { formatMessageDetailTime } from "@/lib/chat-utils";
 import type { Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
 import { useConversations } from "@/hooks/useConversations";
+import { LogoutButton } from "./LogoutButton";
 
 type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "closed";
 
@@ -542,6 +543,7 @@ export default function InboxApp() {
           >
             Actualizar
           </button>
+          <LogoutButton />
         </div>
       </header>
 

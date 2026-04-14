@@ -8,6 +8,7 @@ import {
 } from "@/lib/conversation-schema";
 import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
+import { requireSessionUser } from "@/lib/auth/require-user";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ const MESSAGE_FETCH_LIMIT = 8000;
 
 export async function GET() {
   try {
+    const auth = await requireSessionUser();
+    if (auth.response) return auth.response;
+
     const supabase = getSupabaseServerClient();
 
     const [convResult, msgResult] = await Promise.all([
@@ -57,6 +61,9 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const auth = await requireSessionUser();
+    if (auth.response) return auth.response;
+
     const body = (await request.json()) as {
       conversationId?: string;
       action?: InboxPatchAction;
