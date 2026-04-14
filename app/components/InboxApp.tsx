@@ -204,7 +204,7 @@ function MessageBubble({
           <Avatar name={guestName} seed={guestSeed} size="sm" />
         </div>
       )}
-      <div className={`flex max-w-[min(100%,560px)] flex-col gap-1 ${isUser ? "items-start" : "items-end"}`}>
+      <div className={`flex max-w-[min(100%,820px)] flex-col gap-1 ${isUser ? "items-start" : "items-end"}`}>
         {!isUser && (
           <span className="flex items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
             <LabelIcon className="h-3 w-3" aria-hidden />
@@ -522,7 +522,9 @@ export default function InboxApp() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-[#f7f4ee] text-[#1f1f1c]">
-      <header className="flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6">
+      <header
+        className={`flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6 ${mobileTab === "chat" ? "max-lg:hidden" : ""}`}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-3.5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#d4c4a8] to-[#c8a97e] text-sm font-bold tracking-tight text-white shadow-md shadow-[#c8a97e]/20 ring-1 ring-[#e7dfd4]">
             C
@@ -566,11 +568,11 @@ export default function InboxApp() {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1">
         <aside
           className={`${
             mobileTab === "list" ? "flex" : "hidden"
-          } w-full min-w-0 flex-col border-[#e7dfd4] bg-[#f8f6f2] lg:flex lg:w-[min(100%,430px)] lg:shrink-0 lg:border-r`}
+          } h-full w-full min-h-0 min-w-0 flex-col border-[#e7dfd4] bg-[#f8f6f2] lg:flex lg:h-auto lg:w-[min(100%,400px)] lg:max-w-[min(100vw,28rem)] lg:shrink-0 lg:border-r`}
         >
           <div className="shrink-0 space-y-3 border-b border-[#e7dfd4] bg-white/60 px-4 pb-4 pt-4">
             <div className="flex items-end justify-between gap-2">
@@ -642,7 +644,7 @@ export default function InboxApp() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f6f2]">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f6f2] scrollbar-app">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
                 <p className="text-sm font-medium text-[#6b665e]">No hay conversaciones</p>
@@ -717,7 +719,7 @@ export default function InboxApp() {
         <section
           className={`${
             mobileTab === "chat" ? "flex" : "hidden"
-          } min-w-0 flex-1 flex-col bg-white lg:flex`}
+          } min-h-0 w-full min-w-0 flex-1 flex-col bg-white lg:flex`}
         >
           {selected ? (
             <>
@@ -773,14 +775,14 @@ export default function InboxApp() {
               )}
 
               <div
-                className="min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-8"
+                className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 scrollbar-app"
                 style={{
                   backgroundImage:
                     "radial-gradient(ellipse 90% 45% at 50% -15%, rgba(200,169,126,0.08), transparent), linear-gradient(180deg, #f8f6f2 0%, #ffffff 50%, #f7f4ee 100%)",
                 }}
               >
-                <div className="mx-auto max-w-3xl space-y-4">
-                  <p className="text-center text-[11px] font-medium uppercase tracking-widest text-[#9c968c]">
+                <div className="w-full min-w-0 space-y-3 sm:space-y-4">
+                  <p className="px-0.5 text-[11px] font-medium uppercase tracking-widest text-[#9c968c] lg:text-center">
                     Historial desde Supabase · IA vs humano es heurístico sin columna dedicada
                   </p>
                   {selected.messages.map((m) => (
@@ -795,13 +797,13 @@ export default function InboxApp() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-4 sm:px-6">
+              <div className="shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 lg:px-6">
                 {sendWarning && (
-                  <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
+                  <p className="mb-3 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
                     {sendWarning}
                   </p>
                 )}
-                <div className="mx-auto flex max-w-3xl gap-3">
+                <div className="flex w-full min-w-0 gap-2.5 sm:gap-3">
                   <input
                     type="text"
                     value={draft}
@@ -840,7 +842,7 @@ export default function InboxApp() {
           )}
         </section>
 
-        <aside className="hidden w-[400px] shrink-0 flex-col border-l border-[#e7dfd4] bg-[#f8f6f2] lg:flex">
+        <aside className="hidden h-full min-h-0 w-[min(400px,32vw)] min-w-[260px] max-w-[400px] shrink-0 flex-col border-l border-[#e7dfd4] bg-[#f8f6f2] lg:flex">
           {selected && (
             <GuestPanelContent
               conversation={selected}
@@ -872,7 +874,7 @@ export default function InboxApp() {
                 <IconClose className="h-5 w-5" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-app">
               <GuestPanelContent
                 conversation={selected}
                 onTakeHuman={takeHumanControl}
@@ -981,7 +983,7 @@ function GuestPanelContent({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5 scrollbar-app">
         <section className="rounded-2xl border border-[#d4e5dc] bg-[#f4faf6] p-4 shadow-sm ring-1 ring-[#e7dfd4]/80">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#4a6b58]">
             <IconPhone className="h-4 w-4" aria-hidden />
