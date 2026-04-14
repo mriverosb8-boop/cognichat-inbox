@@ -1,13 +1,13 @@
-/** Paletas fijas para Tailwind (evita purgar clases dinámicas). */
+/** Paletas fijas para Tailwind (evita purgar clases dinámicas). Tonos suaves acordes a UI clara. */
 export const AVATAR_GRADIENTS = [
-  "from-teal-500 to-emerald-700",
-  "from-sky-500 to-blue-700",
-  "from-violet-500 to-purple-700",
-  "from-amber-500 to-orange-700",
-  "from-rose-500 to-pink-700",
-  "from-cyan-500 to-teal-700",
-  "from-indigo-500 to-blue-800",
-  "from-fuchsia-500 to-violet-700",
+  "from-[#b5a896] to-[#8f8274]",
+  "from-[#a8b0b8] to-[#7d858f]",
+  "from-[#c4b8a8] to-[#9a8f82]",
+  "from-[#b8a99a] to-[#8c7f72]",
+  "from-[#a3aeb8] to-[#76808a]",
+  "from-[#c8a97e] to-[#9e8560]",
+  "from-[#9eb0c4] to-[#6f7d8f]",
+  "from-[#b9ada3] to-[#8a8078]",
 ] as const;
 
 export function avatarGradientClass(seed: string): string {

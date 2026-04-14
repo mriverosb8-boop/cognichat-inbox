@@ -22,7 +22,7 @@ export function LogoutButton() {
       type="button"
       onClick={() => void handleSignOut()}
       disabled={loading}
-      className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition hover:border-rose-500/30 hover:bg-rose-950/30 hover:text-rose-200 disabled:opacity-50"
+      className="rounded-lg border border-[#e7dfd4] bg-white px-2.5 py-1 text-[11px] font-medium text-[#6b665e] shadow-sm transition hover:border-stone-400 hover:bg-[#f1ece4] hover:text-[#1f1f1c] disabled:opacity-50"
     >
       {loading ? "…" : "Cerrar sesión"}
     </button>

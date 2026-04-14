@@ -17,23 +17,23 @@ const operationalConfig: Record<
   ai_active: {
     label: "IA activa",
     short: "IA",
-    dot: "bg-violet-400",
-    chip: "bg-violet-500/15 text-violet-200 ring-1 ring-violet-500/35",
-    listTint: "border-violet-500/20",
+    dot: "bg-violet-500",
+    chip: "bg-violet-100 text-violet-900 ring-1 ring-violet-200/90",
+    listTint: "border-violet-200/70",
   },
   requires_attention: {
     label: "Requiere atención",
     short: "Atención",
-    dot: "bg-amber-400",
-    chip: "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/40",
-    listTint: "border-amber-500/25",
+    dot: "bg-amber-600",
+    chip: "bg-amber-100 text-amber-950 ring-1 ring-amber-200/90",
+    listTint: "border-amber-200/70",
   },
   closed: {
     label: "Completada",
     short: "Hecho",
-    dot: "bg-zinc-500",
-    chip: "bg-zinc-600/35 text-zinc-300 ring-1 ring-zinc-500/35",
-    listTint: "border-zinc-600/30",
+    dot: "bg-stone-400",
+    chip: "bg-stone-200 text-stone-800 ring-1 ring-stone-300/90",
+    listTint: "border-stone-300/80",
   },
 };
 
@@ -167,7 +167,7 @@ function Avatar({
   };
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-semibold text-white shadow-inner ring-black/20 ${grad} ${sizeClasses[size]}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-semibold text-white shadow-inner ring-2 ring-white ${grad} ${sizeClasses[size]}`}
       aria-hidden
     >
       {initials(name)}
@@ -189,10 +189,10 @@ function MessageBubble({
   const isAgent = m.sender === "agent";
 
   const shell = isUser
-    ? "mr-auto rounded-2xl rounded-bl-md border border-white/[0.08] bg-[#14161f] text-zinc-100 ring-1 ring-black/25"
+    ? "mr-auto rounded-2xl rounded-bl-md border border-[#e7dfd4] bg-white text-[#1f1f1c] shadow-sm ring-1 ring-black/[0.04]"
     : isAi
-      ? "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-violet-600 to-indigo-700 text-white ring-1 ring-violet-400/25"
-      : "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-sky-600 to-cyan-700 text-white ring-1 ring-sky-400/30";
+      ? "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#ebe4dc] to-[#e3dbd2] text-[#1f1f1c] ring-1 ring-[#d4c9bc] shadow-sm"
+      : "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#e4edf5] to-[#dce6f0] text-[#1f1f1c] ring-1 ring-[#c5d4e0] shadow-sm";
 
   const label = isAi ? "AI" : "Human";
   const LabelIcon = isAi ? IconSparkles : IconUserCircle;
@@ -206,24 +206,24 @@ function MessageBubble({
       )}
       <div className={`flex max-w-[min(100%,560px)] flex-col gap-1 ${isUser ? "items-start" : "items-end"}`}>
         {!isUser && (
-          <span className="flex items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/90 ring-1 ring-white/15">
+          <span className="flex items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
             <LabelIcon className="h-3 w-3" aria-hidden />
             {label}
           </span>
         )}
-        <div className={`flex flex-col gap-1.5 px-4 py-3 text-[14px] leading-relaxed shadow-lg ${shell}`}>
+        <div className={`flex flex-col gap-1.5 px-4 py-3 text-[14px] leading-relaxed shadow-sm ${shell}`}>
           {isUser && (
-            <span className="inline-flex w-fit items-center gap-1 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+            <span className="inline-flex w-fit items-center gap-1 rounded-md bg-[#f1ece4] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6b665e]">
               Huésped
             </span>
           )}
           <p className="whitespace-pre-wrap">{m.body}</p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <time className={`text-[10px] font-medium tabular-nums ${isUser ? "text-zinc-500" : "text-white/70"}`}>
+            <time className="text-[10px] font-medium tabular-nums text-[#6b665e]">
               {m.sentAt}
             </time>
             {isAi && m.aiMeta && (
-              <span className="text-[10px] tabular-nums text-white/55">
+              <span className="text-[10px] tabular-nums text-[#6b665e]/80">
                 {m.aiMeta.latencyMs} ms · {m.aiMeta.tokens} tok
               </span>
             )}
@@ -514,32 +514,32 @@ export default function InboxApp() {
 
   if (loading && conversations.length === 0) {
     return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#07080c] text-zinc-400">
+      <div className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#f7f4ee] text-[#6b665e]">
         <p className="text-sm font-medium">Cargando conversaciones desde Supabase…</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#07080c] text-zinc-100">
-      <header className="flex h-[52px] shrink-0 items-center border-b border-white/[0.07] bg-[#08090d]/95 px-4 backdrop-blur-xl lg:h-14 lg:px-6">
+    <div className="flex h-[100dvh] flex-col bg-[#f7f4ee] text-[#1f1f1c]">
+      <header className="flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-sm font-bold tracking-tight text-white shadow-lg shadow-emerald-950/50 ring-1 ring-white/10">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#d4c4a8] to-[#c8a97e] text-sm font-bold tracking-tight text-white shadow-md shadow-[#c8a97e]/20 ring-1 ring-[#e7dfd4]">
             C
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-[15px] font-semibold tracking-tight text-white">CogniChat Inbox</h1>
-            <p className="truncate text-[11px] leading-tight text-zinc-500">Recepción · IA + agente humano</p>
+            <h1 className="truncate text-[15px] font-semibold tracking-tight text-[#1f1f1c]">CogniChat Inbox</h1>
+            <p className="truncate text-[11px] leading-tight text-[#6b665e]">Recepción · IA + agente humano</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden rounded-lg bg-zinc-800/80 px-2.5 py-1 text-[11px] font-medium tabular-nums text-zinc-300 ring-1 ring-white/[0.08] sm:inline-flex">
+          <span className="hidden rounded-lg border border-[#e7dfd4] bg-[#f1ece4] px-2.5 py-1 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm sm:inline-flex">
             {filterCounts.unread} sin leer
           </span>
           <button
             type="button"
             onClick={() => void refetch({ silent: true })}
-            className="rounded-lg border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:bg-white/[0.08]"
+            className="rounded-lg border border-[#e7dfd4] bg-white px-2.5 py-1 text-[11px] font-medium text-[#6b665e] shadow-sm transition hover:bg-[#f1ece4] hover:text-[#1f1f1c]"
           >
             Actualizar
           </button>
@@ -548,17 +548,17 @@ export default function InboxApp() {
       </header>
 
       {error && (
-        <div className="shrink-0 border-b border-rose-500/30 bg-rose-950/40 px-4 py-2 text-center text-[13px] text-rose-100">
+        <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-4 py-2 text-center text-[13px] text-rose-900">
           {error}
         </div>
       )}
 
       {actionError && (
-        <div className="shrink-0 border-b border-amber-500/30 bg-amber-950/35 px-4 py-2 text-center text-[13px] text-amber-100">
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-[13px] text-amber-950">
           {actionError}
           <button
             type="button"
-            className="ml-2 underline decoration-amber-500/80 underline-offset-2"
+            className="ml-2 underline decoration-amber-600/80 underline-offset-2"
             onClick={() => setActionError(null)}
           >
             Cerrar
@@ -570,26 +570,26 @@ export default function InboxApp() {
         <aside
           className={`${
             mobileTab === "list" ? "flex" : "hidden"
-          } w-full min-w-0 flex-col border-white/[0.06] bg-[#0b0c11] lg:flex lg:w-[min(100%,430px)] lg:shrink-0 lg:border-r`}
+          } w-full min-w-0 flex-col border-[#e7dfd4] bg-[#f8f6f2] lg:flex lg:w-[min(100%,430px)] lg:shrink-0 lg:border-r`}
         >
-          <div className="shrink-0 space-y-3 border-b border-white/[0.06] px-4 pb-4 pt-4">
+          <div className="shrink-0 space-y-3 border-b border-[#e7dfd4] bg-white/60 px-4 pb-4 pt-4">
             <div className="flex items-end justify-between gap-2">
               <div>
-                <h2 className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400">Cola operativa</h2>
-                <p className="mt-0.5 text-[11px] text-zinc-600">Estado IA / prioridad / propiedad</p>
+                <h2 className="text-[13px] font-semibold uppercase tracking-wider text-[#6b665e]">Cola operativa</h2>
+                <p className="mt-0.5 text-[11px] text-[#9c968c]">Estado IA / prioridad / propiedad</p>
               </div>
-              <span className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium tabular-nums text-zinc-400">
+              <span className="rounded-md border border-[#e7dfd4] bg-[#f1ece4] px-2 py-0.5 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm">
                 {filtered.length}/{conversations.length}
               </span>
             </div>
             <label className="relative block">
-              <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9c968c]" />
               <input
                 type="search"
                 placeholder="Buscar huésped, mensaje o hotel…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="w-full rounded-xl border border-white/[0.08] bg-[#12141c] py-3 pl-11 pr-3.5 text-[14px] text-zinc-100 placeholder:text-zinc-600 shadow-inner transition focus:border-emerald-500/45 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
+                className="w-full rounded-xl border border-[#e7dfd4] bg-white py-3 pl-11 pr-3.5 text-[14px] text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20"
               />
             </label>
 
@@ -603,12 +603,12 @@ export default function InboxApp() {
                     onClick={() => setStatusFilter(tab.id)}
                     className={`shrink-0 rounded-lg px-2.5 py-2 text-[11px] font-medium transition sm:px-3 sm:text-[12px] ${
                       active
-                        ? "bg-emerald-600/25 text-emerald-100 ring-1 ring-emerald-500/40"
-                        : "bg-white/[0.04] text-zinc-400 hover:bg-white/[0.07] hover:text-zinc-200"
+                        ? "border border-[#c8a97e]/50 bg-[#f1ece4] text-[#1f1f1c] shadow-sm ring-1 ring-[#c8a97e]/25"
+                        : "border border-transparent bg-white/80 text-[#6b665e] shadow-sm hover:border-[#e7dfd4] hover:bg-white"
                     }`}
                   >
                     {tab.label}
-                    <span className={`ml-1 tabular-nums sm:ml-1.5 ${active ? "text-emerald-200/90" : "text-zinc-600"}`}>
+                    <span className={`ml-1 tabular-nums sm:ml-1.5 ${active ? "text-[#8a7a62]" : "text-[#9c968c]"}`}>
                       {tab.count}
                     </span>
                   </button>
@@ -617,16 +617,16 @@ export default function InboxApp() {
             </div>
 
             <div>
-              <label htmlFor="property-filter" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+              <label htmlFor="property-filter" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6b665e]">
                 Propiedad
               </label>
               <select
                 id="property-filter"
                 value={propertyFilter}
                 onChange={(e) => setPropertyFilter(e.target.value)}
-                className="w-full cursor-pointer appearance-none rounded-xl border border-white/[0.08] bg-[#12141c] py-2.5 pl-3.5 pr-10 text-[13px] text-zinc-200 shadow-inner focus:border-emerald-500/45 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
+                className="w-full cursor-pointer appearance-none rounded-xl border border-[#e7dfd4] bg-white py-2.5 pl-3.5 pr-10 text-[13px] text-[#1f1f1c] shadow-sm focus:border-[#c8a97e] focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20"
                 style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b665e'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
                   backgroundRepeat: "no-repeat",
                   backgroundPosition: "right 0.75rem center",
                   backgroundSize: "1rem",
@@ -642,11 +642,11 @@ export default function InboxApp() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f6f2]">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-                <p className="text-sm font-medium text-zinc-400">No hay conversaciones</p>
-                <p className="max-w-[240px] text-[13px] leading-relaxed text-zinc-600">
+                <p className="text-sm font-medium text-[#6b665e]">No hay conversaciones</p>
+                <p className="max-w-[240px] text-[13px] leading-relaxed text-[#9c968c]">
                   Ajusta filtros o búsqueda.
                 </p>
               </div>
@@ -660,16 +660,16 @@ export default function InboxApp() {
                     key={c.id}
                     type="button"
                     onClick={() => openChat(c.id)}
-                    className={`group relative flex w-full gap-3.5 border-b border-white/[0.05] px-4 py-4 text-left transition ${
+                    className={`group relative flex w-full gap-3.5 border-b border-[#ebe5dc] px-4 py-4 text-left transition ${
                       active
-                        ? "z-[1] bg-emerald-950/40 ring-1 ring-inset ring-emerald-500/35 before:absolute before:inset-y-3 before:left-0 before:w-[3px] before:rounded-full before:bg-emerald-400"
-                        : `hover:bg-white/[0.03] ${op.listTint} border-l-2 border-l-transparent hover:border-l-white/10`
-                    } ${hasUnread && !active ? "bg-amber-950/25" : ""}`}
+                        ? "z-[1] bg-white shadow-[inset_3px_0_0_0_#c8a97e] ring-1 ring-inset ring-[#e7dfd4]"
+                        : `hover:bg-white/70 ${op.listTint} border-l-2 border-l-transparent hover:border-l-[#e7dfd4]`
+                    } ${hasUnread && !active ? "bg-amber-50/80" : ""}`}
                   >
                     <div className="relative shrink-0 pt-0.5">
                       <Avatar name={c.guest.name} seed={c.guest.id} size="md" />
                       {hasUnread && (
-                        <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white shadow-lg shadow-emerald-950/60 ring-2 ring-[#0b0c11]">
+                        <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#c8a97e] px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-white">
                           {c.unreadCount > 9 ? "9+" : c.unreadCount}
                         </span>
                       )}
@@ -677,13 +677,13 @@ export default function InboxApp() {
                     <div className="min-w-0 flex-1 py-0.5">
                       <div className="flex items-start justify-between gap-3">
                         <span
-                          className={`truncate text-[15px] leading-tight ${hasUnread ? "font-semibold text-white" : "font-medium text-zinc-200"}`}
+                          className={`truncate text-[15px] leading-tight ${hasUnread ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
                         >
                           {c.guest.name}
                         </span>
-                        <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-zinc-500">{c.lastMessageAt}</span>
+                        <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-[#9c968c]">{c.lastMessageAt}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-zinc-500 group-hover:text-zinc-400">
+                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-[#6b665e] group-hover:text-[#4a4742]">
                         {c.lastMessagePreview}
                       </p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -696,13 +696,13 @@ export default function InboxApp() {
                         <span
                           className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                             c.controlMode === "ai"
-                              ? "bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/25"
-                              : "bg-sky-500/15 text-sky-200 ring-1 ring-sky-500/25"
+                              ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                              : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
                           }`}
                         >
                           {c.controlMode === "ai" ? "Modo IA" : "Humano"}
                         </span>
-                        <span className="truncate text-[11px] text-zinc-600" title={c.guest.property}>
+                        <span className="truncate text-[11px] text-[#9c968c]" title={c.guest.property}>
                           {c.guest.property.split("—")[0]?.trim()}
                         </span>
                       </div>
@@ -717,25 +717,25 @@ export default function InboxApp() {
         <section
           className={`${
             mobileTab === "chat" ? "flex" : "hidden"
-          } min-w-0 flex-1 flex-col bg-[#06070a] lg:flex`}
+          } min-w-0 flex-1 flex-col bg-white lg:flex`}
         >
           {selected ? (
             <>
-              <div className="flex min-h-[56px] shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#08090d]/95 px-2 py-2 backdrop-blur-md sm:gap-4 sm:px-5">
+              <div className="flex min-h-[56px] shrink-0 items-center gap-3 border-b border-[#e7dfd4] bg-white/95 px-2 py-2 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-md sm:gap-4 sm:px-5">
                 <button
                   type="button"
                   onClick={() => setMobileTab("list")}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-white/[0.06] hover:text-white lg:hidden"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#6b665e] transition hover:bg-[#f1ece4] hover:text-[#1f1f1c] lg:hidden"
                   aria-label="Volver a conversaciones"
                 >
                   <IconBack className="h-5 w-5" />
                 </button>
-                <div className="rounded-xl p-0.5 ring-2 ring-emerald-500/45">
+                <div className="rounded-xl p-0.5 ring-2 ring-[#c8a97e]/40">
                   <Avatar name={selected.guest.name} seed={selected.guest.id} size="sm" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-[15px] font-semibold text-white">{selected.guest.name}</h2>
+                    <h2 className="truncate text-[15px] font-semibold text-[#1f1f1c]">{selected.guest.name}</h2>
                     <span
                       className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide sm:inline-flex ${operationalConfig[selected.operationalStatus].chip}`}
                     >
@@ -744,22 +744,22 @@ export default function InboxApp() {
                     <span
                       className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                         selected.controlMode === "ai"
-                          ? "bg-violet-500/20 text-violet-200 ring-1 ring-violet-500/30"
-                          : "bg-sky-500/20 text-sky-200 ring-1 ring-sky-500/30"
+                          ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                          : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
                       }`}
                     >
                       {selected.controlMode === "ai" ? "IA" : "Agente"}
                     </span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-emerald-400/95">
-                    <IconWhatsApp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-[#6b665e]">
+                    <IconWhatsApp className="h-3.5 w-3.5 shrink-0 text-[#7d9a7a]" aria-hidden />
                     <span className="truncate">{selected.channelLabel}</span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setGuestOpen(true)}
-                  className="flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-[12px] font-semibold text-zinc-300 transition hover:bg-white/[0.06] lg:hidden"
+                  className="flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-[12px] font-semibold text-[#6b665e] transition hover:bg-[#f1ece4] lg:hidden"
                 >
                   <IconGuest className="h-4 w-4" />
                   Ficha
@@ -767,7 +767,7 @@ export default function InboxApp() {
               </div>
 
               {inputLocked && (
-                <div className="shrink-0 border-b border-zinc-700/50 bg-zinc-900/80 px-4 py-2 text-center text-[12px] text-zinc-400">
+                <div className="shrink-0 border-b border-[#e7dfd4] bg-[#f1ece4] px-4 py-2 text-center text-[12px] text-[#6b665e]">
                   Conversación cerrada · reabre desde la ficha si necesitas seguir el hilo (demo)
                 </div>
               )}
@@ -776,11 +776,11 @@ export default function InboxApp() {
                 className="min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-8"
                 style={{
                   backgroundImage:
-                    "radial-gradient(ellipse 90% 45% at 50% -15%, rgba(139,92,246,0.06), transparent), linear-gradient(180deg, #06070a 0%, #080a10 50%, #06070a 100%)",
+                    "radial-gradient(ellipse 90% 45% at 50% -15%, rgba(200,169,126,0.08), transparent), linear-gradient(180deg, #f8f6f2 0%, #ffffff 50%, #f7f4ee 100%)",
                 }}
               >
                 <div className="mx-auto max-w-3xl space-y-4">
-                  <p className="text-center text-[11px] font-medium uppercase tracking-widest text-zinc-600">
+                  <p className="text-center text-[11px] font-medium uppercase tracking-widest text-[#9c968c]">
                     Historial desde Supabase · IA vs humano es heurístico sin columna dedicada
                   </p>
                   {selected.messages.map((m) => (
@@ -795,9 +795,9 @@ export default function InboxApp() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-white/[0.07] bg-[#08090d] px-3 py-4 sm:px-6">
+              <div className="shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-4 sm:px-6">
                 {sendWarning && (
-                  <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-amber-500/25 bg-amber-950/30 px-3 py-2 text-[12px] text-amber-100">
+                  <p className="mx-auto mb-3 max-w-3xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
                     {sendWarning}
                   </p>
                 )}
@@ -818,13 +818,13 @@ export default function InboxApp() {
                         ? "Conversación completada"
                         : "Responder como agente humano… (Enter para enviar)"
                     }
-                    className="min-h-[48px] flex-1 rounded-2xl border border-white/[0.1] bg-[#12141c] px-5 text-[14px] text-zinc-100 placeholder:text-zinc-600 shadow-inner transition focus:border-sky-500/45 focus:outline-none focus:ring-2 focus:ring-sky-500/15 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="min-h-[48px] flex-1 rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-5 text-[14px] text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed disabled:opacity-45"
                   />
                   <button
                     type="button"
                     onClick={sendMessage}
                     disabled={!draft.trim() || inputLocked}
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-600 to-cyan-700 text-white shadow-lg shadow-sky-950/40 ring-1 ring-sky-400/25 transition hover:from-sky-500 hover:to-cyan-600 disabled:cursor-not-allowed disabled:opacity-35"
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8a9eae] to-[#6b7d8f] text-white shadow-md shadow-[#6b7d8f]/25 ring-1 ring-[#c5d4e0] transition hover:from-[#7d8fa0] hover:to-[#5f6f80] disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Enviar"
                   >
                     <IconSend className="h-5 w-5" />
@@ -834,13 +834,13 @@ export default function InboxApp() {
             </>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-              <p className="text-sm font-medium text-zinc-500">Selecciona una conversación</p>
-              <p className="max-w-xs text-[13px] text-zinc-600">Cola unificada con estados IA y prioridad.</p>
+              <p className="text-sm font-medium text-[#6b665e]">Selecciona una conversación</p>
+              <p className="max-w-xs text-[13px] text-[#9c968c]">Cola unificada con estados IA y prioridad.</p>
             </div>
           )}
         </section>
 
-        <aside className="hidden w-[400px] shrink-0 flex-col border-l border-white/[0.07] bg-[#0a0b10] lg:flex">
+        <aside className="hidden w-[400px] shrink-0 flex-col border-l border-[#e7dfd4] bg-[#f8f6f2] lg:flex">
           {selected && (
             <GuestPanelContent
               conversation={selected}
@@ -856,17 +856,17 @@ export default function InboxApp() {
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
           <button
             type="button"
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#1f1f1c]/30 backdrop-blur-sm"
             aria-label="Cerrar"
             onClick={() => setGuestOpen(false)}
           />
-          <div className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-white/[0.1] bg-[#0a0b10] shadow-2xl shadow-black/50">
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-              <span className="text-[15px] font-semibold text-white">Ficha operativa</span>
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-[#e7dfd4] bg-[#f8f6f2] shadow-2xl shadow-[#1f1f1c]/10">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#e7dfd4] bg-white px-4">
+              <span className="text-[15px] font-semibold text-[#1f1f1c]">Ficha operativa</span>
               <button
                 type="button"
                 onClick={() => setGuestOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-[#6b665e] transition hover:bg-[#f1ece4] hover:text-[#1f1f1c]"
                 aria-label="Cerrar panel"
               >
                 <IconClose className="h-5 w-5" />
@@ -888,12 +888,12 @@ export default function InboxApp() {
 }
 
 const TAG_STYLES = [
-  "bg-sky-500/15 text-sky-200 ring-sky-500/25",
-  "bg-violet-500/15 text-violet-200 ring-violet-500/25",
-  "bg-amber-500/15 text-amber-200 ring-amber-500/25",
-  "bg-emerald-500/15 text-emerald-200 ring-emerald-500/25",
-  "bg-rose-500/15 text-rose-200 ring-rose-500/25",
-  "bg-cyan-500/15 text-cyan-200 ring-cyan-500/25",
+  "bg-sky-100 text-sky-900 ring-sky-200/80",
+  "bg-violet-100 text-violet-900 ring-violet-200/80",
+  "bg-amber-100 text-amber-950 ring-amber-200/80",
+  "bg-emerald-100 text-emerald-900 ring-emerald-200/80",
+  "bg-rose-100 text-rose-900 ring-rose-200/80",
+  "bg-cyan-100 text-cyan-900 ring-cyan-200/80",
 ];
 
 function formatActivityIso(iso: string) {
@@ -923,16 +923,16 @@ function GuestPanelContent({
 
   return (
     <div className="flex h-full flex-col">
-      <div className={`relative shrink-0 overflow-hidden bg-gradient-to-br px-5 pb-5 pt-7 ${grad} ring-1 ring-white/10`}>
-        <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(10,11,16,0.94),transparent)]" />
+      <div className={`relative shrink-0 overflow-hidden bg-gradient-to-br px-5 pb-5 pt-7 ${grad} ring-1 ring-[#e7dfd4]`}>
+        <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(255,255,255,0.85),transparent)]" />
         <div className="relative flex flex-col items-center text-center">
           <div
-            className={`flex h-[72px] w-[72px] items-center justify-center rounded-2xl bg-gradient-to-br text-2xl font-bold tracking-tight text-white shadow-xl ring-2 ring-white/25 ${grad}`}
+            className={`flex h-[72px] w-[72px] items-center justify-center rounded-2xl bg-gradient-to-br text-2xl font-bold tracking-tight text-white shadow-lg ring-2 ring-white/60 ${grad}`}
           >
             {initials(guest.name)}
           </div>
-          <h3 className="mt-3 text-lg font-semibold tracking-tight text-white drop-shadow-sm">{guest.name}</h3>
-          <p className="mt-1 font-mono text-[12px] text-white/75">{guest.phone}</p>
+          <h3 className="mt-3 text-lg font-semibold tracking-tight text-[#1f1f1c]">{guest.name}</h3>
+          <p className="mt-1 font-mono text-[12px] text-[#6b665e]">{guest.phone}</p>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${op.chip}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${op.dot}`} />
@@ -941,8 +941,8 @@ function GuestPanelContent({
             <span
               className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase ${
                 conversation.controlMode === "ai"
-                  ? "bg-violet-950/50 text-violet-200 ring-1 ring-violet-500/30"
-                  : "bg-sky-950/50 text-sky-200 ring-1 ring-sky-500/30"
+                  ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                  : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
               }`}
             >
               {conversation.controlMode === "ai" ? "Control IA" : "Control humano"}
@@ -951,14 +951,14 @@ function GuestPanelContent({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-2 border-b border-white/[0.07] bg-[#0c0d14] px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Acciones rápidas</p>
+      <div className="shrink-0 space-y-2 border-b border-[#e7dfd4] bg-white px-4 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b665e]">Acciones rápidas</p>
         <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={onTakeHuman}
             disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl bg-amber-600/90 py-2.5 text-[12px] font-semibold text-white shadow-lg shadow-amber-950/30 ring-1 ring-amber-400/30 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl bg-gradient-to-r from-[#c4a574] to-[#b8956a] py-2.5 text-[12px] font-semibold text-white shadow-md shadow-[#c8a97e]/25 ring-1 ring-[#b8956a]/40 transition hover:from-[#b8956a] hover:to-[#a8825c] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Tomar control humano
           </button>
@@ -966,7 +966,7 @@ function GuestPanelContent({
             type="button"
             onClick={onReactivateAi}
             disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl border border-violet-500/35 bg-violet-950/40 py-2.5 text-[12px] font-semibold text-violet-100 transition hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl border border-violet-200 bg-violet-50 py-2.5 text-[12px] font-semibold text-violet-900 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Reactivar IA
           </button>
@@ -974,7 +974,7 @@ function GuestPanelContent({
             type="button"
             onClick={onComplete}
             disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 py-2.5 text-[12px] font-semibold text-zinc-200 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl border border-[#e7dfd4] bg-[#f1ece4] py-2.5 text-[12px] font-semibold text-[#1f1f1c] transition hover:bg-[#ebe3d8] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Marcar como completado
           </button>
@@ -982,73 +982,73 @@ function GuestPanelContent({
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5">
-        <section className="rounded-2xl border border-emerald-500/20 bg-emerald-950/15 p-4 ring-1 ring-emerald-500/15">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-emerald-400/95">
+        <section className="rounded-2xl border border-[#d4e5dc] bg-[#f4faf6] p-4 shadow-sm ring-1 ring-[#e7dfd4]/80">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#4a6b58]">
             <IconPhone className="h-4 w-4" aria-hidden />
             Datos de conversación
           </div>
-          <dl className="mt-3 space-y-2.5 text-[13px] text-zinc-200">
+          <dl className="mt-3 space-y-2.5 text-[13px] text-[#1f1f1c]">
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Teléfono</dt>
-              <dd className="max-w-[55%] text-right font-mono text-[12px] text-emerald-100">{guest.phone}</dd>
+              <dt className="text-[#6b665e]">Teléfono</dt>
+              <dd className="max-w-[55%] text-right font-mono text-[12px] text-[#3d5a4a]">{guest.phone}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Última actividad</dt>
+              <dt className="text-[#6b665e]">Última actividad</dt>
               <dd className="text-right text-[12px]">{formatActivityIso(conversation.lastActivityIso)}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Mensajes (cargados)</dt>
+              <dt className="text-[#6b665e]">Mensajes (cargados)</dt>
               <dd className="tabular-nums">{conversation.messages.length}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Needs Human (BD)</dt>
+              <dt className="text-[#6b665e]">Needs Human (BD)</dt>
               <dd>{conversation.needsHuman ? "Sí" : "No"}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">IA activa (BD)</dt>
+              <dt className="text-[#6b665e]">IA activa (BD)</dt>
               <dd>{conversation.aiActive ? "Sí" : "No"}</dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Estado (BD)</dt>
-              <dd className="max-w-[55%] text-right font-mono text-[11px] text-zinc-300">
+              <dt className="text-[#6b665e]">Estado (BD)</dt>
+              <dd className="max-w-[55%] text-right font-mono text-[11px] text-[#4a4742]">
                 {conversation.dbStatus ?? "—"}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-zinc-500">Bloqueado</dt>
+              <dt className="text-[#6b665e]">Bloqueado</dt>
               <dd>{conversation.blocked ? "Sí" : "No"}</dd>
             </div>
             {conversation.blockedAt && (
               <div className="flex justify-between gap-2">
-                <dt className="text-zinc-500">blocked_at</dt>
-                <dd className="text-right text-[11px] text-zinc-400">{formatActivityIso(conversation.blockedAt)}</dd>
+                <dt className="text-[#6b665e]">blocked_at</dt>
+                <dd className="text-right text-[11px] text-[#9c968c]">{formatActivityIso(conversation.blockedAt)}</dd>
               </div>
             )}
           </dl>
         </section>
 
-        <section className="rounded-2xl border border-white/[0.06] bg-[#12131a] p-4 shadow-inner ring-1 ring-white/[0.03]">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-            <IconBuilding className="h-4 w-4 text-emerald-500/90" aria-hidden />
+        <section className="rounded-2xl border border-[#e7dfd4] bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#6b665e]">
+            <IconBuilding className="h-4 w-4 text-[#7d9a7a]" aria-hidden />
             Cotización / propiedad
           </div>
-          <p className="mt-2.5 text-[14px] font-medium leading-snug text-zinc-100">{guest.property}</p>
+          <p className="mt-2.5 text-[14px] font-medium leading-snug text-[#1f1f1c]">{guest.property}</p>
         </section>
 
         {!notesAreDefault && (
-          <section className="rounded-2xl border border-amber-500/25 bg-amber-950/20 p-4 ring-1 ring-amber-500/15">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-400/95">
+          <section className="rounded-2xl border border-amber-200 bg-amber-50/90 p-4 shadow-sm ring-1 ring-amber-100">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-900/90">
               <IconNote className="h-4 w-4" aria-hidden />
               Notas (tabla / handoff)
             </div>
-            <p className="mt-2.5 text-[13px] leading-relaxed text-amber-100/95">{guest.internalNotes}</p>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-amber-950/95">{guest.internalNotes}</p>
           </section>
         )}
 
         {hasTags && (
-          <section className="rounded-2xl border border-white/[0.06] bg-[#12131a] p-4 shadow-inner ring-1 ring-white/[0.03]">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              <IconTag className="h-4 w-4 text-violet-400/90" aria-hidden />
+          <section className="rounded-2xl border border-[#e7dfd4] bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#6b665e]">
+              <IconTag className="h-4 w-4 text-violet-600/80" aria-hidden />
               Etiquetas
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1068,14 +1068,14 @@ function GuestPanelContent({
           <button
             type="button"
             onClick={() => void navigator.clipboard?.writeText(guest.phone)}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/[0.06] py-2.5 text-[11px] font-semibold text-zinc-200 ring-1 ring-white/10 transition hover:bg-white/[0.1]"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#e7dfd4] bg-white py-2.5 text-[11px] font-semibold text-[#1f1f1c] shadow-sm transition hover:bg-[#f1ece4]"
           >
             <IconPhone className="h-4 w-4" />
             Copiar teléfono
           </button>
         </div>
 
-        <p className="pb-2 text-center text-[10px] text-zinc-600">CogniChat · Supabase + n8n</p>
+        <p className="pb-2 text-center text-[10px] text-[#9c968c]">CogniChat · Supabase + n8n</p>
       </div>
     </div>
   );
