@@ -797,15 +797,18 @@ export default function InboxApp() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 lg:px-6">
+              <div className="relative z-20 shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 lg:px-6">
                 {sendWarning && (
                   <p className="mb-3 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
                     {sendWarning}
                   </p>
                 )}
-                <div className="flex w-full min-w-0 gap-2.5 sm:gap-3">
+                <div className="flex w-full min-w-0 items-end gap-2.5 sm:gap-3">
                   <input
                     type="text"
+                    enterKeyHint="send"
+                    inputMode="text"
+                    autoComplete="off"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
@@ -820,7 +823,7 @@ export default function InboxApp() {
                         ? "Conversación completada"
                         : "Responder como agente humano… (Enter para enviar)"
                     }
-                    className="min-h-[48px] flex-1 rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-5 text-[14px] text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="min-h-[3rem] min-w-0 flex-1 touch-manipulation rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-4 py-3 text-base leading-normal text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed disabled:opacity-45 lg:px-5 lg:text-[14px] lg:leading-snug"
                   />
                   <button
                     type="button"
