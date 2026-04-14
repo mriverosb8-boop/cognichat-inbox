@@ -198,32 +198,36 @@ function MessageBubble({
   const LabelIcon = isAi ? IconSparkles : IconUserCircle;
 
   return (
-    <div className={`flex w-full gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
+    <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
       {isUser && (
-        <div className="mt-1 shrink-0">
+        <div className="mt-0.5 shrink-0 self-end">
           <Avatar name={guestName} seed={guestSeed} size="sm" />
         </div>
       )}
-      <div className={`flex max-w-[min(100%,820px)] flex-col gap-1 ${isUser ? "items-start" : "items-end"}`}>
+      <div
+        className={`flex min-w-0 flex-col gap-1 ${isUser ? "items-start" : "items-end"} max-w-[min(88%,20rem)] sm:max-w-[min(85%,24rem)] lg:max-w-[min(75%,42rem)]`}
+      >
         {!isUser && (
-          <span className="flex items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
-            <LabelIcon className="h-3 w-3" aria-hidden />
-            {label}
+          <span className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
+            <LabelIcon className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">{label}</span>
           </span>
         )}
-        <div className={`flex flex-col gap-1.5 px-4 py-3 text-[14px] leading-relaxed shadow-sm ${shell}`}>
+        <div
+          className={`w-fit max-w-full min-w-0 flex flex-col gap-1.5 break-words px-3.5 py-2.5 text-[15px] leading-snug shadow-sm [overflow-wrap:anywhere] sm:px-4 sm:text-[14px] sm:leading-relaxed lg:text-[14px] ${shell}`}
+        >
           {isUser && (
-            <span className="inline-flex w-fit items-center gap-1 rounded-md bg-[#f1ece4] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6b665e]">
+            <span className="inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-[#f1ece4] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6b665e]">
               Huésped
             </span>
           )}
-          <p className="whitespace-pre-wrap">{m.body}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <time className="text-[10px] font-medium tabular-nums text-[#6b665e]">
+          <p className="whitespace-pre-wrap break-words">{m.body}</p>
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:mt-2 sm:gap-x-3">
+            <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
               {m.sentAt}
             </time>
             {isAi && m.aiMeta && (
-              <span className="text-[10px] tabular-nums text-[#6b665e]/80">
+              <span className="max-w-full break-words text-[10px] tabular-nums text-[#6b665e]/80">
                 {m.aiMeta.latencyMs} ms · {m.aiMeta.tokens} tok
               </span>
             )}
@@ -521,7 +525,7 @@ export default function InboxApp() {
   }
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#f7f4ee] text-[#1f1f1c]">
+    <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-full flex-col overflow-x-hidden bg-[#f7f4ee] text-[#1f1f1c] supports-[height:100dvh]:min-h-[100dvh]">
       <header
         className={`flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6 ${mobileTab === "chat" ? "max-lg:hidden" : ""}`}
       >
@@ -568,7 +572,7 @@ export default function InboxApp() {
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
         <aside
           className={`${
             mobileTab === "list" ? "flex" : "hidden"
@@ -719,7 +723,7 @@ export default function InboxApp() {
         <section
           className={`${
             mobileTab === "chat" ? "flex" : "hidden"
-          } min-h-0 w-full min-w-0 flex-1 flex-col bg-white lg:flex`}
+          } min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden bg-white lg:flex`}
         >
           {selected ? (
             <>
@@ -775,14 +779,14 @@ export default function InboxApp() {
               )}
 
               <div
-                className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6 scrollbar-app"
+                className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4 lg:px-6 scrollbar-app"
                 style={{
                   backgroundImage:
                     "radial-gradient(ellipse 90% 45% at 50% -15%, rgba(200,169,126,0.08), transparent), linear-gradient(180deg, #f8f6f2 0%, #ffffff 50%, #f7f4ee 100%)",
                 }}
               >
-                <div className="w-full min-w-0 space-y-3 sm:space-y-4">
-                  <p className="px-0.5 text-[11px] font-medium uppercase tracking-widest text-[#9c968c] lg:text-center">
+                <div className="w-full min-w-0 space-y-2.5 sm:space-y-3.5 lg:space-y-4">
+                  <p className="break-words px-0.5 text-[11px] font-medium uppercase tracking-widest text-[#9c968c] [overflow-wrap:anywhere] lg:text-center">
                     Historial desde Supabase · IA vs humano es heurístico sin columna dedicada
                   </p>
                   {selected.messages.map((m) => (
@@ -797,13 +801,13 @@ export default function InboxApp() {
                 </div>
               </div>
 
-              <div className="relative z-20 shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 lg:px-6">
+              <div className="relative z-20 w-full min-w-0 max-w-full shrink-0 border-t border-[#e7dfd4] bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 lg:px-6">
                 {sendWarning && (
-                  <p className="mb-3 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950">
+                  <p className="mb-3 w-full min-w-0 max-w-full break-words rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950 [overflow-wrap:anywhere]">
                     {sendWarning}
                   </p>
                 )}
-                <div className="flex w-full min-w-0 items-end gap-2.5 sm:gap-3">
+                <div className="flex w-full min-w-0 max-w-full items-end gap-2 sm:gap-3">
                   <input
                     type="text"
                     enterKeyHint="send"
