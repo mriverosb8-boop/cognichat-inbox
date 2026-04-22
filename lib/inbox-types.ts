@@ -66,4 +66,10 @@ export interface Conversation {
   dbStatus: string | null;
   blocked: boolean;
   blockedAt: string | null;
+  /**
+   * Copia directa de `conversations.request`.
+   * Cuando vale `"pending"`, la IA detectó que el caso requiere seguimiento humano.
+   * El agente lo resuelve desde el inbox (vuelve a `null`).
+   */
+  request: string | null;
 }

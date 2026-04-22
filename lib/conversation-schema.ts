@@ -11,8 +11,18 @@ export type ConversationDbRow = {
   cotizacion: string | null;
   blocked: boolean | null;
   blocked_at: string | null;
+  /**
+   * Marca operativa cuando la IA detecta que el caso necesita atención humana.
+   * - "pending": la IA marcó el caso para seguimiento humano
+   * - null / otro valor: caso sin pendiente activo
+   */
+  request: string | null;
   created_at: string;
   updated_at: string;
 };
 
-export type InboxPatchAction = "human_control" | "reactivate_ai" | "completed";
+export type InboxPatchAction =
+  | "human_control"
+  | "reactivate_ai"
+  | "completed"
+  | "resolve_request";

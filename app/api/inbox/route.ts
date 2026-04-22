@@ -78,10 +78,14 @@ export async function PATCH(request: Request) {
     if (
       action !== "human_control" &&
       action !== "reactivate_ai" &&
-      action !== "completed"
+      action !== "completed" &&
+      action !== "resolve_request"
     ) {
       return NextResponse.json(
-        { error: "action debe ser human_control, reactivate_ai o completed" },
+        {
+          error:
+            "action debe ser human_control, reactivate_ai, completed o resolve_request",
+        },
         { status: 400 }
       );
     }
@@ -110,6 +114,12 @@ export async function PATCH(request: Request) {
         patch = {
           ...patch,
           status: "completed",
+        };
+        break;
+      case "resolve_request":
+        patch = {
+          ...patch,
+          request: null,
         };
         break;
       default:

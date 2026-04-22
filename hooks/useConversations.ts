@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Conversation } from "@/lib/inbox-types";
+import { useInboxRealtime } from "@/hooks/useInboxRealtime";
 
 type InboxResponse = {
   conversations: Conversation[];
@@ -10,11 +11,9 @@ type InboxResponse = {
 };
 
 export type RefetchOptions = {
-  /** Si es true, no muestra el estado global de carga ni vacía la lista en error (ideal para polling). */
+  /** Si es true, no muestra el estado global de carga ni vacía la lista en error (ideal para reconciliación). */
   silent?: boolean;
 };
-
-const POLL_INTERVAL_MS = 2500;
 
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -54,26 +53,29 @@ export function useConversations() {
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  // Reconciliación puntual: refetch silencioso cuando la pestaña vuelve al foco,
+  // útil si el socket de Realtime estuvo en background o el tab estuvo dormido.
   useEffect(() => {
-    const tick = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      void loadRef.current({ silent: true });
-    };
-
-    const id = window.setInterval(tick, POLL_INTERVAL_MS);
-
     const onVisible = () => {
       if (typeof document !== "undefined" && !document.hidden) {
         void loadRef.current({ silent: true });
       }
     };
     document.addEventListener("visibilitychange", onVisible);
-
     return () => {
-      window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
+
+  // Realtime: reemplaza el polling. Si llega un evento sin contexto local
+  // (p. ej. nueva conversación o mensaje de un teléfono aún no cargado),
+  // disparamos un refetch silencioso para reconciliar.
+  useInboxRealtime({
+    setConversations,
+    onMissingContext: () => {
+      void loadRef.current({ silent: true });
+    },
+  });
 
   return {
     conversations,

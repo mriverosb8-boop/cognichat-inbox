@@ -249,6 +249,7 @@ export default function InboxApp() {
   const [guestOpen, setGuestOpen] = useState(false);
   const [sendWarning, setSendWarning] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [resolvingRequest, setResolvingRequest] = useState(false);
   const scrollEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -501,6 +502,42 @@ export default function InboxApp() {
     }
   };
 
+  const resolveRequest = async () => {
+    if (!selectedId) return;
+    const conv = conversations.find((c) => c.id === selectedId);
+    if (!conv || conv.request !== "pending") return;
+    setActionError(null);
+    setResolvingRequest(true);
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === selectedId ? { ...c, request: null } : c))
+    );
+
+    try {
+      const res = await fetch("/api/inbox", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conv.id, action: "resolve_request" }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === selectedId ? { ...c, request: "pending" } : c))
+        );
+        setActionError(j.error ?? "No se pudo marcar el asunto como resuelto");
+        return;
+      }
+      await refetch({ silent: true });
+    } catch {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === selectedId ? { ...c, request: "pending" } : c))
+      );
+      setActionError("Error de red al marcar el asunto como resuelto");
+    } finally {
+      setResolvingRequest(false);
+    }
+  };
+
   const openChat = (id: string) => {
     setSelectedId(id);
     setMobileTab("chat");
@@ -661,20 +698,36 @@ export default function InboxApp() {
                 const active = c.id === selectedId;
                 const op = operationalConfig[c.operationalStatus];
                 const hasUnread = c.unreadCount > 0;
+                const isPending = c.request === "pending";
+                const baseClasses = active
+                  ? "z-[1] bg-white shadow-[inset_3px_0_0_0_#c8a97e] ring-1 ring-inset ring-[#e7dfd4]"
+                  : `hover:bg-white/70 ${op.listTint} border-l-2 border-l-transparent hover:border-l-[#e7dfd4]`;
+                const pendingClasses = isPending
+                  ? active
+                    ? "bg-rose-50/60 shadow-[inset_3px_0_0_0_#e11d48] ring-1 ring-inset ring-rose-200"
+                    : "bg-rose-50/70 border-l-2 border-l-rose-500 hover:border-l-rose-500 hover:bg-rose-50"
+                  : hasUnread && !active
+                    ? "bg-amber-50/80"
+                    : "";
                 return (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => openChat(c.id)}
-                    className={`group relative flex w-full gap-3.5 border-b border-[#ebe5dc] px-4 py-4 text-left transition ${
-                      active
-                        ? "z-[1] bg-white shadow-[inset_3px_0_0_0_#c8a97e] ring-1 ring-inset ring-[#e7dfd4]"
-                        : `hover:bg-white/70 ${op.listTint} border-l-2 border-l-transparent hover:border-l-[#e7dfd4]`
-                    } ${hasUnread && !active ? "bg-amber-50/80" : ""}`}
+                    className={`group relative flex w-full gap-3.5 border-b border-[#ebe5dc] px-4 py-4 text-left transition ${baseClasses} ${pendingClasses}`}
                   >
                     <div className="relative shrink-0 pt-0.5">
                       <Avatar name={c.guest.name} seed={c.guest.id} size="md" />
-                      {hasUnread && (
+                      {isPending && (
+                        <span
+                          className="absolute -right-0.5 -top-0.5 flex h-[14px] w-[14px] items-center justify-center rounded-full bg-rose-500 shadow-md ring-2 ring-white"
+                          aria-label="Pendiente de atención humana"
+                          title="Pendiente de atención humana"
+                        >
+                          <span className="h-[6px] w-[6px] rounded-full bg-white" aria-hidden />
+                        </span>
+                      )}
+                      {!isPending && hasUnread && (
                         <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#c8a97e] px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-white">
                           {c.unreadCount > 9 ? "9+" : c.unreadCount}
                         </span>
@@ -683,7 +736,7 @@ export default function InboxApp() {
                     <div className="min-w-0 flex-1 py-0.5">
                       <div className="flex items-start justify-between gap-3">
                         <span
-                          className={`truncate text-[15px] leading-tight ${hasUnread ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
+                          className={`truncate text-[15px] leading-tight ${hasUnread || isPending ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
                         >
                           {c.guest.name}
                         </span>
@@ -693,6 +746,12 @@ export default function InboxApp() {
                         {c.lastMessagePreview}
                       </p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                        {isPending && (
+                          <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-rose-700/40">
+                            <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
+                            Pendiente
+                          </span>
+                        )}
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${op.chip}`}
                         >
@@ -856,6 +915,8 @@ export default function InboxApp() {
               onTakeHuman={takeHumanControl}
               onReactivateAi={reactivateAi}
               onComplete={markCompleted}
+              onResolveRequest={resolveRequest}
+              resolvingRequest={resolvingRequest}
             />
           )}
         </aside>
@@ -887,6 +948,8 @@ export default function InboxApp() {
                 onTakeHuman={takeHumanControl}
                 onReactivateAi={reactivateAi}
                 onComplete={markCompleted}
+                onResolveRequest={resolveRequest}
+                resolvingRequest={resolvingRequest}
               />
             </div>
           </div>
@@ -918,17 +981,22 @@ function GuestPanelContent({
   onTakeHuman,
   onReactivateAi,
   onComplete,
+  onResolveRequest,
+  resolvingRequest,
 }: {
   conversation: Conversation;
   onTakeHuman: () => void;
   onReactivateAi: () => void;
   onComplete: () => void;
+  onResolveRequest: () => void;
+  resolvingRequest: boolean;
 }) {
   const { guest } = conversation;
   const grad = avatarGradientClass(guest.id);
   const op = operationalConfig[conversation.operationalStatus];
   const hasTags = guest.tags.length > 0;
   const notesAreDefault = guest.internalNotes.startsWith("Sin notas");
+  const isPendingRequest = conversation.request === "pending";
 
   return (
     <div className="flex h-full flex-col">
@@ -963,6 +1031,35 @@ function GuestPanelContent({
       <div className="shrink-0 space-y-2 border-b border-[#e7dfd4] bg-white px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b665e]">Acciones rápidas</p>
         <div className="flex flex-col gap-2">
+          {isPendingRequest && (
+            <button
+              type="button"
+              onClick={onResolveRequest}
+              disabled={resolvingRequest}
+              aria-busy={resolvingRequest}
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 py-2.5 text-[12px] font-semibold text-white shadow-md shadow-rose-500/25 ring-1 ring-rose-700/40 transition hover:from-rose-700 hover:to-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resolvingRequest ? (
+                <>
+                  <svg
+                    className="h-3.5 w-3.5 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden
+                  >
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  Resolviendo…
+                </>
+              ) : (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
+                  Asunto resuelto
+                </>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={onTakeHuman}
@@ -1012,6 +1109,16 @@ function GuestPanelContent({
             <div className="flex justify-between gap-2">
               <dt className="text-[#6b665e]">Needs Human (BD)</dt>
               <dd>{conversation.needsHuman ? "Sí" : "No"}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-[#6b665e]">Request (BD)</dt>
+              <dd
+                className={`text-right font-mono text-[11px] ${
+                  isPendingRequest ? "font-semibold text-rose-700" : "text-[#4a4742]"
+                }`}
+              >
+                {conversation.request ?? "—"}
+              </dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-[#6b665e]">IA activa (BD)</dt>

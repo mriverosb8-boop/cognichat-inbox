@@ -290,6 +290,11 @@ export function mergeConversationsTableWithMessages(
       reservation: emptyReservation(),
     };
 
+    const requestRaw =
+      typeof cr.request === "string" ? cr.request.trim() : cr.request;
+    const requestValue =
+      typeof requestRaw === "string" && requestRaw.length > 0 ? requestRaw : null;
+
     out.push({
       id: cr.id,
       guest,
@@ -299,6 +304,7 @@ export function mergeConversationsTableWithMessages(
       dbStatus: cr.status,
       blocked: readBoolCol(cr.blocked, false),
       blockedAt: cr.blocked_at,
+      request: requestValue,
       lastMessagePreview: lastPreview.length > 120 ? `${lastPreview.slice(0, 117)}…` : lastPreview,
       lastMessageAt: lastAt,
       lastActivityIso,
@@ -316,4 +322,110 @@ export function mergeConversationsTableWithMessages(
 /** Expone semilla estable para avatares. */
 export function guestSeed(guestPhone: string): string {
   return guestPhone;
+}
+
+/**
+ * Dado un row de `Wubby_Whatsapp` y el teléfono del huésped (conversación destino),
+ * deriva el `Message` que hay que insertar en la bandeja.
+ *
+ * Usa el "lado opuesto al huésped" como identidad de Twilio para clasificar IA/Humano,
+ * sin necesidad de conocer el valor global de `TWILIO_WHATSAPP_ADDRESS` en cliente.
+ */
+export function buildMessageFromWubbyRow(
+  row: WubbyWhatsappRow,
+  guestPhone: string
+): {
+  message: Message;
+  previewRaw: string;
+  createdAtIso: string;
+  lastMessageLabel: string;
+} {
+  const guestNorm = normalizeWaIdentity(guestPhone);
+  const s = normalizeWaIdentity(row.sender ?? "");
+  const r = normalizeWaIdentity(row.recipient ?? "");
+  const twilioSide = s === guestNorm ? (r || null) : (s || null);
+  const sender = classifyMessageSender(row, guestNorm, twilioSide);
+
+  const body = String(row.message ?? "").trim() || "(vacío)";
+  const previewRaw = String(row.message ?? "").trim() || "—";
+
+  return {
+    message: {
+      id: String(row.id),
+      body,
+      sentAt: formatMessageDetailTime(row.created_at),
+      sender,
+    },
+    previewRaw,
+    createdAtIso: row.created_at,
+    lastMessageLabel: formatMessageListTime(row.created_at),
+  };
+}
+
+/** Devuelve la conversación cuyo `guestPhone` matchea el `sender` o `recipient` del row. */
+export function findConversationForWubbyRow(
+  conversations: Conversation[],
+  row: WubbyWhatsappRow
+): Conversation | null {
+  const s = normalizeWaIdentity(row.sender ?? "");
+  const r = normalizeWaIdentity(row.recipient ?? "");
+  if (!s && !r) return null;
+  for (const c of conversations) {
+    const cp = normalizeWaIdentity(c.guestPhone);
+    if (!cp) continue;
+    if (cp === s || cp === r) return c;
+  }
+  return null;
+}
+
+/**
+ * Aplica un patch incremental sobre una conversación existente a partir de un row
+ * actualizado de `conversations`. Preserva mensajes ya cargados.
+ */
+export function applyConversationRowPatch(
+  existing: Conversation,
+  row: ConversationDbRow
+): Conversation {
+  const { operationalStatus, controlMode } = mapOperationalFromConversationRow(row);
+  const requestRaw = typeof row.request === "string" ? row.request.trim() : row.request;
+  const requestValue =
+    typeof requestRaw === "string" && requestRaw.length > 0 ? requestRaw : null;
+
+  const normalizedPhone = normalizeWaIdentity(row.guest_phone ?? "");
+  const phoneDisplay =
+    normalizedPhone || String(row.guest_phone ?? "").trim() || existing.guestPhone;
+  const name = displayGuestName(row.guest_name, phoneDisplay);
+
+  const cotizacion =
+    row.cotizacion != null && String(row.cotizacion).trim() !== ""
+      ? String(row.cotizacion)
+      : null;
+
+  const updatedIso = row.updated_at || existing.lastActivityIso;
+  const lastActivityIso =
+    new Date(updatedIso).getTime() > new Date(existing.lastActivityIso).getTime()
+      ? updatedIso
+      : existing.lastActivityIso;
+
+  return {
+    ...existing,
+    guest: {
+      ...existing.guest,
+      id: row.id,
+      name,
+      phone: phoneDisplay,
+      property: cotizacion ? cotizacion : existing.guest.property,
+      tags: cotizacion ? [cotizacion.slice(0, 24)] : existing.guest.tags,
+    },
+    guestPhone: phoneDisplay,
+    needsHuman: row.needs_human ?? false,
+    aiActive: row.ai_active ?? true,
+    dbStatus: row.status,
+    blocked: row.blocked ?? false,
+    blockedAt: row.blocked_at,
+    request: requestValue,
+    operationalStatus,
+    controlMode,
+    lastActivityIso,
+  };
 }
