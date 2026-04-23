@@ -79,12 +79,13 @@ export async function PATCH(request: Request) {
       action !== "human_control" &&
       action !== "reactivate_ai" &&
       action !== "completed" &&
-      action !== "resolve_request"
+      action !== "resolve_request" &&
+      action !== "reopen"
     ) {
       return NextResponse.json(
         {
           error:
-            "action debe ser human_control, reactivate_ai, completed o resolve_request",
+            "action debe ser human_control, reactivate_ai, completed, resolve_request o reopen",
         },
         { status: 400 }
       );
@@ -120,6 +121,15 @@ export async function PATCH(request: Request) {
         patch = {
           ...patch,
           request: null,
+        };
+        break;
+      case "reopen":
+        // Inversa de `completed`. `completed` solo toca `status`, así que reabrir
+        // pone `status = 'open'` y respeta `ai_active` / `needs_human` tal como
+        // estaban antes de cerrarse (los reconstruye `mapOperationalFromConversationRow`).
+        patch = {
+          ...patch,
+          status: "open",
         };
         break;
       default:

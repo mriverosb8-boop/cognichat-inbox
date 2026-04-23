@@ -25,4 +25,5 @@ export type InboxPatchAction =
   | "human_control"
   | "reactivate_ai"
   | "completed"
-  | "resolve_request";
+  | "resolve_request"
+  | "reopen";

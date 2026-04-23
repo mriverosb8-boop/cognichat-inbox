@@ -4,7 +4,7 @@ import type { SVGProps } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { avatarGradientClass, initials } from "@/lib/avatar";
 import { formatMessageDetailTime } from "@/lib/chat-utils";
-import type { Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
+import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
 import { useConversations } from "@/hooks/useConversations";
 import { LogoutButton } from "./LogoutButton";
 
@@ -194,8 +194,8 @@ function MessageBubble({
       ? "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#ebe4dc] to-[#e3dbd2] text-[#1f1f1c] ring-1 ring-[#d4c9bc] shadow-sm"
       : "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#e4edf5] to-[#dce6f0] text-[#1f1f1c] ring-1 ring-[#c5d4e0] shadow-sm";
 
-  const label = isAi ? "AI" : "Human";
-  const LabelIcon = isAi ? IconSparkles : IconUserCircle;
+  const label = isAi ? "AI" : isAgent ? "Human" : "Huésped";
+  const LabelIcon = isAi ? IconSparkles : isAgent ? IconUserCircle : IconGuest;
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -207,20 +207,13 @@ function MessageBubble({
       <div
         className={`flex min-w-0 flex-col gap-1 ${isUser ? "items-start" : "items-end"} max-w-[min(88%,20rem)] sm:max-w-[min(85%,24rem)] lg:max-w-[min(75%,42rem)]`}
       >
-        {!isUser && (
-          <span className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
-            <LabelIcon className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="truncate">{label}</span>
-          </span>
-        )}
+        <span className="inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-[#e7dfd4] bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b665e] shadow-sm ring-1 ring-black/[0.03]">
+          <LabelIcon className="h-3 w-3 shrink-0" aria-hidden />
+          <span className="truncate">{label}</span>
+        </span>
         <div
           className={`w-fit max-w-full min-w-0 flex flex-col gap-1.5 break-words px-3.5 py-2.5 text-[15px] leading-snug shadow-sm [overflow-wrap:anywhere] sm:px-4 sm:text-[14px] sm:leading-relaxed lg:text-[14px] ${shell}`}
         >
-          {isUser && (
-            <span className="inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-[#f1ece4] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6b665e]">
-              Huésped
-            </span>
-          )}
           <p className="whitespace-pre-wrap break-words">{m.body}</p>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:mt-2 sm:gap-x-3">
             <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
@@ -465,6 +458,70 @@ export default function InboxApp() {
       await refetch({ silent: true });
     } catch {
       setActionError("Error de red al reactivar la IA");
+    }
+  };
+
+  const reopenConversation = async () => {
+    if (!selectedId) return;
+    const conv = conversations.find((c) => c.id === selectedId);
+    if (!conv || conv.operationalStatus !== "closed") return;
+    setActionError(null);
+
+    const nextOperational: OperationalStatus =
+      conv.needsHuman || !conv.aiActive ? "requires_attention" : "ai_active";
+    const nextControl: ControlMode = nextOperational === "ai_active" ? "ai" : "human";
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selectedId
+          ? {
+              ...c,
+              dbStatus: "open",
+              operationalStatus: nextOperational,
+              controlMode: nextControl,
+            }
+          : c
+      )
+    );
+
+    try {
+      const res = await fetch("/api/inbox", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conv.id, action: "reopen" }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedId
+              ? {
+                  ...c,
+                  dbStatus: conv.dbStatus,
+                  operationalStatus: "closed",
+                  controlMode: conv.controlMode,
+                }
+              : c
+          )
+        );
+        setActionError(j.error ?? "No se pudo reactivar la conversación");
+        return;
+      }
+      await refetch({ silent: true });
+    } catch {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedId
+            ? {
+                ...c,
+                dbStatus: conv.dbStatus,
+                operationalStatus: "closed",
+                controlMode: conv.controlMode,
+              }
+            : c
+        )
+      );
+      setActionError("Error de red al reactivar la conversación");
     }
   };
 
@@ -758,15 +815,17 @@ export default function InboxApp() {
                           <span className={`h-1.5 w-1.5 rounded-full ${op.dot}`} aria-hidden />
                           {op.label}
                         </span>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                            c.controlMode === "ai"
-                              ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
-                              : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
-                          }`}
-                        >
-                          {c.controlMode === "ai" ? "Modo IA" : "Humano"}
-                        </span>
+                        {c.operationalStatus !== "ai_active" && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                              c.controlMode === "ai"
+                                ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                                : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
+                            }`}
+                          >
+                            {c.controlMode === "ai" ? "Modo IA" : "Humano"}
+                          </span>
+                        )}
                         <span className="truncate text-[11px] text-[#9c968c]" title={c.guest.property}>
                           {c.guest.property.split("—")[0]?.trim()}
                         </span>
@@ -806,19 +865,21 @@ export default function InboxApp() {
                     >
                       {operationalConfig[selected.operationalStatus].short}
                     </span>
-                    <span
-                      className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                        selected.controlMode === "ai"
-                          ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
-                          : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
-                      }`}
-                    >
-                      {selected.controlMode === "ai" ? "IA" : "Agente"}
-                    </span>
+                    {selected.operationalStatus !== "ai_active" && (
+                      <span
+                        className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          selected.controlMode === "ai"
+                            ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                            : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
+                        }`}
+                      >
+                        {selected.controlMode === "ai" ? "IA" : "Agente"}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-[#6b665e]">
                     <IconWhatsApp className="h-3.5 w-3.5 shrink-0 text-[#7d9a7a]" aria-hidden />
-                    <span className="truncate">{selected.channelLabel}</span>
+                    <span className="truncate">WhatsApp</span>
                   </div>
                 </div>
                 <button
@@ -916,6 +977,7 @@ export default function InboxApp() {
               onReactivateAi={reactivateAi}
               onComplete={markCompleted}
               onResolveRequest={resolveRequest}
+              onReopen={reopenConversation}
               resolvingRequest={resolvingRequest}
             />
           )}
@@ -949,6 +1011,7 @@ export default function InboxApp() {
                 onReactivateAi={reactivateAi}
                 onComplete={markCompleted}
                 onResolveRequest={resolveRequest}
+                onReopen={reopenConversation}
                 resolvingRequest={resolvingRequest}
               />
             </div>
@@ -982,6 +1045,7 @@ function GuestPanelContent({
   onReactivateAi,
   onComplete,
   onResolveRequest,
+  onReopen,
   resolvingRequest,
 }: {
   conversation: Conversation;
@@ -989,6 +1053,7 @@ function GuestPanelContent({
   onReactivateAi: () => void;
   onComplete: () => void;
   onResolveRequest: () => void;
+  onReopen: () => void;
   resolvingRequest: boolean;
 }) {
   const { guest } = conversation;
@@ -997,6 +1062,7 @@ function GuestPanelContent({
   const hasTags = guest.tags.length > 0;
   const notesAreDefault = guest.internalNotes.startsWith("Sin notas");
   const isPendingRequest = conversation.request === "pending";
+  const isClosed = conversation.operationalStatus === "closed";
 
   return (
     <div className="flex h-full flex-col">
@@ -1015,15 +1081,17 @@ function GuestPanelContent({
               <span className={`h-1.5 w-1.5 rounded-full ${op.dot}`} />
               {op.label}
             </span>
-            <span
-              className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase ${
-                conversation.controlMode === "ai"
-                  ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
-                  : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
-              }`}
-            >
-              {conversation.controlMode === "ai" ? "Control IA" : "Control humano"}
-            </span>
+            {conversation.operationalStatus !== "ai_active" && (
+              <span
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase ${
+                  conversation.controlMode === "ai"
+                    ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200/80"
+                    : "bg-sky-100 text-sky-900 ring-1 ring-sky-200/80"
+                }`}
+              >
+                {conversation.controlMode === "ai" ? "Control IA" : "Control humano"}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1031,59 +1099,68 @@ function GuestPanelContent({
       <div className="shrink-0 space-y-2 border-b border-[#e7dfd4] bg-white px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6b665e]">Acciones rápidas</p>
         <div className="flex flex-col gap-2">
-          {isPendingRequest && (
+          {isClosed ? (
             <button
               type="button"
-              onClick={onResolveRequest}
-              disabled={resolvingRequest}
-              aria-busy={resolvingRequest}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 py-2.5 text-[12px] font-semibold text-white shadow-md shadow-rose-500/25 ring-1 ring-rose-700/40 transition hover:from-rose-700 hover:to-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onReopen}
+              className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 py-2.5 text-[12px] font-semibold text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-700/40 transition hover:from-emerald-700 hover:to-emerald-600"
             >
-              {resolvingRequest ? (
-                <>
-                  <svg
-                    className="h-3.5 w-3.5 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                  </svg>
-                  Resolviendo…
-                </>
-              ) : (
-                <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
-                  Asunto resuelto
-                </>
-              )}
+              Reactivar conversación
             </button>
+          ) : (
+            <>
+              {isPendingRequest && (
+                <button
+                  type="button"
+                  onClick={onResolveRequest}
+                  disabled={resolvingRequest}
+                  aria-busy={resolvingRequest}
+                  className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 py-2.5 text-[12px] font-semibold text-white shadow-md shadow-rose-500/25 ring-1 ring-rose-700/40 transition hover:from-rose-700 hover:to-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resolvingRequest ? (
+                    <>
+                      <svg
+                        className="h-3.5 w-3.5 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        aria-hidden
+                      >
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                      Resolviendo…
+                    </>
+                  ) : (
+                    <>
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
+                      Asunto resuelto
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onTakeHuman}
+                className="w-full rounded-xl bg-gradient-to-r from-[#c4a574] to-[#b8956a] py-2.5 text-[12px] font-semibold text-white shadow-md shadow-[#c8a97e]/25 ring-1 ring-[#b8956a]/40 transition hover:from-[#b8956a] hover:to-[#a8825c]"
+              >
+                Tomar control humano
+              </button>
+              <button
+                type="button"
+                onClick={onReactivateAi}
+                className="w-full rounded-xl border border-violet-200 bg-violet-50 py-2.5 text-[12px] font-semibold text-violet-900 transition hover:bg-violet-100"
+              >
+                Reactivar IA
+              </button>
+              <button
+                type="button"
+                onClick={onComplete}
+                className="w-full rounded-xl border border-[#e7dfd4] bg-[#f1ece4] py-2.5 text-[12px] font-semibold text-[#1f1f1c] transition hover:bg-[#ebe3d8]"
+              >
+                Marcar como completado
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            onClick={onTakeHuman}
-            disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl bg-gradient-to-r from-[#c4a574] to-[#b8956a] py-2.5 text-[12px] font-semibold text-white shadow-md shadow-[#c8a97e]/25 ring-1 ring-[#b8956a]/40 transition hover:from-[#b8956a] hover:to-[#a8825c] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Tomar control humano
-          </button>
-          <button
-            type="button"
-            onClick={onReactivateAi}
-            disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl border border-violet-200 bg-violet-50 py-2.5 text-[12px] font-semibold text-violet-900 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Reactivar IA
-          </button>
-          <button
-            type="button"
-            onClick={onComplete}
-            disabled={conversation.operationalStatus === "closed"}
-            className="w-full rounded-xl border border-[#e7dfd4] bg-[#f1ece4] py-2.5 text-[12px] font-semibold text-[#1f1f1c] transition hover:bg-[#ebe3d8] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Marcar como completado
-          </button>
         </div>
       </div>
 

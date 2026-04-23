@@ -311,7 +311,7 @@ export function mergeConversationsTableWithMessages(
       unreadCount: 0,
       operationalStatus,
       controlMode,
-      channelLabel: "WhatsApp (Twilio → Supabase)",
+      channelLabel: "WhatsApp",
       messages,
     });
   }
