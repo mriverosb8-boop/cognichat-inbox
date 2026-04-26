@@ -8,7 +8,7 @@ export default function LoginPage() {
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#d4c4a8] to-[#c8a97e] text-lg font-bold text-white shadow-md shadow-[#c8a97e]/25 ring-1 ring-[#e7dfd4]">
           C
         </div>
-        <p className="text-[13px] text-[#6b665e]">CogniChat Inbox</p>
+        <p className="text-[13px] text-[#6b665e]">FerrarIA Inbox</p>
       </div>
       <LoginForm />
     </div>

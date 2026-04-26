@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CogniChat Inbox",
+  title: "FerrarIA Inbox",
   description: "Bandeja de conversaciones para recepción hotelera.",
 };
 

@@ -628,7 +628,7 @@ export default function InboxApp() {
             C
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-[15px] font-semibold tracking-tight text-[#1f1f1c]">CogniChat Inbox</h1>
+            <h1 className="truncate text-[15px] font-semibold tracking-tight text-[#1f1f1c]">FerrarIA Inbox</h1>
             <p className="truncate text-[11px] leading-tight text-[#6b665e]">Recepción · IA + agente humano</p>
           </div>
         </div>
@@ -1039,6 +1039,44 @@ function formatActivityIso(iso: string) {
   }
 }
 
+type SummaryFetchResult =
+  | { kind: "ok"; text: string }
+  | { kind: "empty" }
+  | { kind: "error"; message: string };
+
+async function fetchConversationSummaryFromApi(conversationId: string): Promise<SummaryFetchResult> {
+  const summaryRes = await fetch(
+    `/api/conversation-summary?conversation_id=${encodeURIComponent(conversationId)}`,
+    { credentials: "include", cache: "no-store" }
+  );
+  const summaryPayload = (await summaryRes.json()) as {
+    data?: { summary: string | null } | null;
+    supabaseError?: { message: string; code?: string; details?: string; hint?: string } | null;
+    error?: string;
+  };
+
+  if (summaryRes.status === 401) {
+    return { kind: "error", message: "Sesión no válida. Vuelve a iniciar sesión." };
+  }
+  if (summaryRes.status === 400) {
+    return { kind: "error", message: summaryPayload.error ?? "Parámetros no válidos." };
+  }
+  if (summaryRes.status === 500) {
+    return { kind: "error", message: summaryPayload.error ?? "Error al leer el resumen." };
+  }
+  if (summaryPayload.supabaseError) {
+    return {
+      kind: "error",
+      message: "No se pudo cargar el resumen: " + summaryPayload.supabaseError.message,
+    };
+  }
+  const row = summaryPayload.data;
+  if (!row || typeof row.summary !== "string" || !row.summary.trim()) {
+    return { kind: "empty" };
+  }
+  return { kind: "ok", text: row.summary.trim() };
+}
+
 function GuestPanelContent({
   conversation,
   onTakeHuman,
@@ -1063,6 +1101,120 @@ function GuestPanelContent({
   const notesAreDefault = guest.internalNotes.startsWith("Sin notas");
   const isPendingRequest = conversation.request === "pending";
   const isClosed = conversation.operationalStatus === "closed";
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryLoadMode, setSummaryLoadMode] = useState<"initial" | "regenerate">("initial");
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [summaryDbEmpty, setSummaryDbEmpty] = useState(false);
+  const summaryPanelGenRef = useRef(0);
+
+  const applySummaryResult = useCallback((r: SummaryFetchResult) => {
+    if (r.kind === "ok") {
+      setSummaryText(r.text);
+      setSummaryDbEmpty(false);
+      setSummaryError(null);
+    } else if (r.kind === "empty") {
+      setSummaryText(null);
+      setSummaryDbEmpty(true);
+      setSummaryError(null);
+    } else {
+      setSummaryText(null);
+      setSummaryDbEmpty(false);
+      setSummaryError(r.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    const cid = conversation.id;
+    const gen = ++summaryPanelGenRef.current;
+
+    setSummaryLoading(true);
+    setSummaryLoadMode("initial");
+    setSummaryError(null);
+    setSummaryText(null);
+    setSummaryDbEmpty(false);
+
+    void (async () => {
+      const result = await fetchConversationSummaryFromApi(cid);
+      if (gen !== summaryPanelGenRef.current) {
+        return;
+      }
+      applySummaryResult(result);
+      setSummaryLoading(false);
+    })();
+  }, [conversation.id, applySummaryResult]);
+
+  const createChatSummary = useCallback(async () => {
+    const gen = ++summaryPanelGenRef.current;
+    setSummaryLoading(true);
+    setSummaryLoadMode("regenerate");
+    setSummaryError(null);
+    setSummaryText(null);
+    setSummaryDbEmpty(false);
+    try {
+      try {
+        const res = await fetch("/api/create-conversation-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: conversation.id }),
+        });
+        if (gen !== summaryPanelGenRef.current) {
+          return;
+        }
+        if (res.status === 401) {
+          if (gen === summaryPanelGenRef.current) {
+            setSummaryError("Sesión no válida. Vuelve a iniciar sesión.");
+          }
+          return;
+        }
+        if (res.status === 400) {
+          const data = (await res.json()) as { error?: string };
+          if (gen === summaryPanelGenRef.current) {
+            setSummaryError(data.error ?? "Solicitud no válida.");
+          }
+          return;
+        }
+      } catch {
+        // El webhook vía API puede fallar; seguimos y leemos Supabase
+      }
+
+      if (gen !== summaryPanelGenRef.current) {
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 2000);
+      });
+
+      if (gen !== summaryPanelGenRef.current) {
+        return;
+      }
+
+      console.log(
+        "[conversation summary] conversation_id (UUID activo, antes del fetch):",
+        conversation.id
+      );
+
+      const result = await fetchConversationSummaryFromApi(conversation.id);
+      console.log("[conversation summary] resultado tras generar:", result);
+      if (gen !== summaryPanelGenRef.current) {
+        return;
+      }
+      applySummaryResult(result);
+    } catch (e) {
+      if (gen === summaryPanelGenRef.current) {
+        setSummaryError(
+          e instanceof Error
+            ? e.message
+            : "Error inesperado. Comprueba la conexión e inténtalo de nuevo."
+        );
+      }
+    } finally {
+      if (gen === summaryPanelGenRef.current) {
+        setSummaryLoading(false);
+      }
+    }
+  }, [conversation.id, applySummaryResult]);
 
   return (
     <div className="flex h-full flex-col">
@@ -1161,10 +1313,96 @@ function GuestPanelContent({
               </button>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => void createChatSummary()}
+            disabled={summaryLoading}
+            aria-busy={summaryLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#c5d4e0] bg-gradient-to-r from-white to-[#f4f1ec] py-2.5 text-[12px] font-semibold text-[#1f1f1c] shadow-sm ring-1 ring-[#e7dfd4] transition hover:border-[#8a9eae]/50 hover:from-[#f8f6f2] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {summaryLoading ? (
+              <>
+                <svg
+                  className="h-3.5 w-3.5 shrink-0 animate-spin text-[#6b7d8f]"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    className="opacity-25"
+                  />
+                  <path
+                    d="M22 12a10 10 0 0 1-10 10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Generando resumen…
+              </>
+            ) : (
+              <>
+                <IconSparkles className="h-3.5 w-3.5 shrink-0 text-[#6b7d8f]" aria-hidden />
+                Crear resumen del chat
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5 scrollbar-app">
+        <section className="rounded-2xl border border-[#e7dfd4] bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#6b665e]">
+            <IconSparkles className="h-4 w-4 text-[#6b7d8f]" aria-hidden />
+            Resumen del chat
+          </div>
+          {summaryLoading && (
+            <div
+              className="mt-3 flex items-center gap-2.5 rounded-xl border border-[#e7dfd4] bg-[#f8f6f2] px-3 py-3 text-[13px] text-[#6b665e]"
+              role="status"
+              aria-live="polite"
+            >
+              <svg className="h-4 w-4 shrink-0 animate-spin text-[#6b7d8f]" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                <path
+                  d="M22 12a10 10 0 0 1-10 10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>
+                {summaryLoadMode === "initial"
+                  ? "Cargando resumen…"
+                  : "Generando resumen, espera un momento…"}
+              </span>
+            </div>
+          )}
+          {!summaryLoading && summaryError && (
+            <div
+              className="mt-3 rounded-xl border border-rose-200 bg-rose-50/90 px-3 py-2.5 text-[13px] leading-relaxed text-rose-900"
+              role="alert"
+            >
+              {summaryError}
+            </div>
+          )}
+          {!summaryLoading && !summaryError && summaryText && (
+            <div className="mt-3 min-w-0 rounded-lg bg-[#f8f6f2] p-3 ring-1 ring-[#e7dfd4]">
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[#1f1f1c]">
+                {summaryText}
+              </p>
+            </div>
+          )}
+          {!summaryLoading && !summaryError && summaryDbEmpty && (
+            <p className="mt-2.5 text-[13px] leading-relaxed text-[#9c968c]">Sin resumen aún</p>
+          )}
+        </section>
+
         <section className="rounded-2xl border border-[#d4e5dc] bg-[#f4faf6] p-4 shadow-sm ring-1 ring-[#e7dfd4]/80">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[#4a6b58]">
             <IconPhone className="h-4 w-4" aria-hidden />
@@ -1268,7 +1506,7 @@ function GuestPanelContent({
           </button>
         </div>
 
-        <p className="pb-2 text-center text-[10px] text-[#9c968c]">CogniChat · Supabase + n8n</p>
+        <p className="pb-2 text-center text-[10px] text-[#9c968c]">FerrarIA · Supabase + n8n</p>
       </div>
     </div>
   );

@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       guestPhone,
       message,
       conversationId: body.conversationId ?? null,
-      source: "cognichat-inbox",
+      source: "FerrarIA-inbox",
       sentAt: new Date().toISOString(),
     };
 

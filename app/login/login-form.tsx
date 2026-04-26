@@ -48,7 +48,7 @@ export function LoginForm() {
     >
       <div className="space-y-1">
         <h1 className="text-lg font-semibold tracking-tight text-[#1f1f1c]">Iniciar sesión</h1>
-        <p className="text-[13px] text-[#6b665e]">Accede al inbox con tu cuenta de CogniChat.</p>
+        <p className="text-[13px] text-[#6b665e]">Accede al inbox con tu cuenta de FerrarIA.</p>
       </div>
 
       {error && (
