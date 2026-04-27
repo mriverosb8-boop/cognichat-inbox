@@ -77,6 +77,24 @@ export function getRowField(row: WubbyWhatsappRow, ...keys: string[]): unknown {
   return undefined;
 }
 
+/** Columna `format` en Wubby_Whatsapp (`audio`, `text`, …). */
+export function readMessageFormat(row: WubbyWhatsappRow): string | undefined {
+  const v = getRowField(row, "format", "Format");
+  if (v == null) return undefined;
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+/** Columna `cause_request` (`yes` = disparó handoff a humano). */
+export function readCauseRequest(row: WubbyWhatsappRow): string | undefined {
+  const v = getRowField(row, "cause_request", "Cause_Request", "causeRequest");
+  if (v == null) return undefined;
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
 export function toBool(v: unknown, defaultVal = false): boolean {
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return v !== 0;
@@ -261,12 +279,19 @@ export function mergeConversationsTableWithMessages(
 
     const title = displayGuestName(cr.guest_name, phoneDisplay);
 
-    const messages: Message[] = msgList.map((row) => ({
-      id: String(row.id),
-      body: String(row.message ?? "").trim() || "(vacío)",
-      sentAt: formatMessageDetailTime(row.created_at),
-      sender: classifyMessageSender(row, guestPhone, twilio),
-    }));
+    const messages: Message[] = msgList.map((row) => {
+      const fmt = readMessageFormat(row);
+      const cr = readCauseRequest(row);
+      return {
+        id: String(row.id),
+        body: String(row.message ?? "").trim() || "(vacío)",
+        sentAt: formatMessageDetailTime(row.created_at),
+        sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
+        sender: classifyMessageSender(row, guestPhone, twilio),
+        ...(fmt ? { format: fmt } : {}),
+        ...(cr ? { causeRequest: cr } : {}),
+      };
+    });
 
     const lastActivityIso =
       lastRow &&
@@ -348,13 +373,18 @@ export function buildMessageFromWubbyRow(
 
   const body = String(row.message ?? "").trim() || "(vacío)";
   const previewRaw = String(row.message ?? "").trim() || "—";
+  const fmt = readMessageFormat(row);
+  const cr = readCauseRequest(row);
 
   return {
     message: {
       id: String(row.id),
       body,
       sentAt: formatMessageDetailTime(row.created_at),
+      sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
       sender,
+      ...(fmt ? { format: fmt } : {}),
+      ...(cr ? { causeRequest: cr } : {}),
     },
     previewRaw,
     createdAtIso: row.created_at,

@@ -39,7 +39,20 @@ export interface Message {
   body: string;
   /** ISO o etiqueta corta según build */
   sentAt: string;
+  /**
+   * ISO 8601 del mensaje (p. ej. `created_at` de la fila) para reglas de negocio
+   * p. ej. ventana de 24 h de Meta; omitido en mensajes solo locales.
+   */
+  sentAtIso?: string;
   sender: MessageSender;
+  /**
+   * Columna `format` en Wubby_Whatsapp: `audio` = voz transcrito, `text` = texto, etc.
+   */
+  format?: string;
+  /**
+   * Columna `cause_request`: `yes` = este mensaje disparó escalación a humano.
+   */
+  causeRequest?: string;
   aiMeta?: AiMessageMeta;
 }
 

@@ -10,6 +10,26 @@ import { LogoutButton } from "./LogoutButton";
 
 type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "closed";
 
+/** Ventana de conversación (WhatsApp / Meta) desde el último mensaje con `sender: "user"`. */
+const META_INBOX_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isReplyBlockedByMetaPolicy(messages: Message[]): boolean {
+  const fromGuest = messages.filter((m) => m.sender === "user");
+  if (fromGuest.length === 0) {
+    return true;
+  }
+  const last = fromGuest[fromGuest.length - 1]!;
+  const raw = last.sentAtIso?.trim();
+  if (!raw) {
+    return true;
+  }
+  const ms = new Date(raw).getTime();
+  if (Number.isNaN(ms)) {
+    return true;
+  }
+  return Date.now() - ms > META_INBOX_REPLY_WINDOW_MS;
+}
+
 const operationalConfig: Record<
   OperationalStatus,
   { label: string; short: string; dot: string; chip: string; listTint: string }
@@ -117,6 +137,18 @@ function IconNote(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function IconMic(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3v-6a3 3 0 116 0v6a3 3 0 01-3 3z"
+      />
+    </svg>
+  );
+}
+
 function IconTag(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
@@ -188,14 +220,25 @@ function MessageBubble({
   const isAi = m.sender === "ai";
   const isAgent = m.sender === "agent";
 
-  const shell = isUser
-    ? "mr-auto rounded-2xl rounded-bl-md border border-[#e7dfd4] bg-white text-[#1f1f1c] shadow-sm ring-1 ring-black/[0.04]"
-    : isAi
-      ? "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#ebe4dc] to-[#e3dbd2] text-[#1f1f1c] ring-1 ring-[#d4c9bc] shadow-sm"
-      : "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#e4edf5] to-[#dce6f0] text-[#1f1f1c] ring-1 ring-[#c5d4e0] shadow-sm";
+  const isHandoffCause =
+    typeof m.causeRequest === "string" && m.causeRequest.trim().toLowerCase() === "yes";
+
+  const shell = isHandoffCause
+    ? isUser
+      ? "mr-auto rounded-2xl rounded-bl-md border border-amber-200/85 border-l-[3px] border-l-amber-500 bg-gradient-to-br from-amber-50/90 to-white text-[#1f1f1c] shadow-sm ring-1 ring-amber-100/70"
+      : isAi
+        ? "ml-auto rounded-2xl rounded-br-md border border-amber-200/70 border-l-[3px] border-l-amber-500 bg-gradient-to-br from-amber-50/70 to-[#ebe4dc] text-[#1f1f1c] ring-1 ring-amber-200/50 shadow-sm"
+        : "ml-auto rounded-2xl rounded-br-md border border-amber-200/70 border-l-[3px] border-l-amber-500 bg-gradient-to-br from-amber-50/60 to-[#e2ebf4] text-[#1f1f1c] ring-1 ring-amber-200/45 shadow-sm"
+    : isUser
+      ? "mr-auto rounded-2xl rounded-bl-md border border-[#e7dfd4] bg-white text-[#1f1f1c] shadow-sm ring-1 ring-black/[0.04]"
+      : isAi
+        ? "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#ebe4dc] to-[#e3dbd2] text-[#1f1f1c] ring-1 ring-[#d4c9bc] shadow-sm"
+        : "ml-auto rounded-2xl rounded-br-md bg-gradient-to-br from-[#e4edf5] to-[#dce6f0] text-[#1f1f1c] ring-1 ring-[#c5d4e0] shadow-sm";
 
   const label = isAi ? "AI" : isAgent ? "Human" : "Huésped";
   const LabelIcon = isAi ? IconSparkles : isAgent ? IconUserCircle : IconGuest;
+  const isTranscribedVoice =
+    isUser && typeof m.format === "string" && m.format.trim().toLowerCase() === "audio";
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -214,6 +257,22 @@ function MessageBubble({
         <div
           className={`w-fit max-w-full min-w-0 flex flex-col gap-1.5 break-words px-3.5 py-2.5 text-[15px] leading-snug shadow-sm [overflow-wrap:anywhere] sm:px-4 sm:text-[14px] sm:leading-relaxed lg:text-[14px] ${shell}`}
         >
+          {isHandoffCause && (
+            <p className="mb-0.5 flex max-w-full items-center gap-1 self-stretch text-[9px] font-medium leading-tight text-amber-950/80 sm:text-[10px]">
+              <span className="inline-flex max-w-full items-center gap-0.5 rounded-md border border-amber-300/55 bg-amber-100/55 px-1.5 py-0.5 ring-1 ring-amber-200/35">
+                <span aria-hidden>⚠️</span>
+                <span>Solicitó agente humano</span>
+              </span>
+            </p>
+          )}
+          {isTranscribedVoice && (
+            <p className="mb-0.5 flex max-w-full items-center gap-1 self-stretch text-[9px] font-medium leading-tight text-[#6b665e] sm:text-[10px]">
+              <span className="inline-flex items-center gap-0.5 rounded-md border border-[#e7dfd4] bg-[#f8f6f2] px-1.5 py-0.5 ring-1 ring-black/[0.03]">
+                <IconMic className="h-2.5 w-2.5 shrink-0 opacity-85" aria-hidden />
+                <span>Mensaje de voz transcrito</span>
+              </span>
+            </p>
+          )}
           <p className="whitespace-pre-wrap break-words">{m.body}</p>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:mt-2 sm:gap-x-3">
             <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
@@ -260,6 +319,11 @@ export default function InboxApp() {
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId]
+  );
+
+  const replyBlockedByMeta = useMemo(
+    () => (selected ? isReplyBlockedByMetaPolicy(selected.messages) : false),
+    [selected]
   );
 
   const propertyOptions = useMemo(() => {
@@ -331,11 +395,13 @@ export default function InboxApp() {
     if (!text || !selectedId) return;
     const selectedConv = conversations.find((c) => c.id === selectedId);
     if (selectedConv?.operationalStatus === "closed") return;
+    if (isReplyBlockedByMetaPolicy(selectedConv?.messages ?? [])) return;
 
     const newMsg: Message = {
       id: `local-${Date.now()}`,
       body: text,
       sentAt: formatMessageDetailTime(new Date().toISOString()),
+      sentAtIso: new Date().toISOString(),
       sender: "agent",
     };
     setConversations((prev) =>
@@ -608,7 +674,8 @@ export default function InboxApp() {
     { id: "closed", label: "Hechas", count: filterCounts.closed },
   ];
 
-  const inputLocked = selected?.operationalStatus === "closed";
+  const conversationClosed = selected?.operationalStatus === "closed";
+  const inputDisabled = Boolean(conversationClosed || replyBlockedByMeta);
 
   if (loading && conversations.length === 0) {
     return (
@@ -892,7 +959,7 @@ export default function InboxApp() {
                 </button>
               </div>
 
-              {inputLocked && (
+              {conversationClosed && (
                 <div className="shrink-0 border-b border-[#e7dfd4] bg-[#f1ece4] px-4 py-2 text-center text-[12px] text-[#6b665e]">
                   Conversación cerrada · reabre desde la ficha si necesitas seguir el hilo (demo)
                 </div>
@@ -927,7 +994,9 @@ export default function InboxApp() {
                     {sendWarning}
                   </p>
                 )}
-                <div className="flex w-full min-w-0 max-w-full items-end gap-2 sm:gap-3">
+                <div
+                  className={`flex w-full min-w-0 max-w-full items-end gap-2 sm:gap-3 ${inputDisabled ? "opacity-[0.55]" : ""} transition-opacity`}
+                >
                   <input
                     type="text"
                     enterKeyHint="send"
@@ -941,24 +1010,32 @@ export default function InboxApp() {
                         sendMessage();
                       }
                     }}
-                    disabled={inputLocked}
+                    disabled={inputDisabled}
                     placeholder={
-                      inputLocked
+                      conversationClosed
                         ? "Conversación completada"
-                        : "Responder como agente humano… (Enter para enviar)"
+                        : replyBlockedByMeta
+                          ? "No puedes responder (política Meta / ventana 24 h)"
+                          : "Responder como agente humano… (Enter para enviar)"
                     }
-                    className="min-h-[3rem] min-w-0 flex-1 touch-manipulation rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-4 py-3 text-base leading-normal text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed disabled:opacity-45 lg:px-5 lg:text-[14px] lg:leading-snug"
+                    className="min-h-[3rem] min-w-0 flex-1 touch-manipulation rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-4 py-3 text-base leading-normal text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed lg:px-5 lg:text-[14px] lg:leading-snug"
                   />
                   <button
                     type="button"
                     onClick={sendMessage}
-                    disabled={!draft.trim() || inputLocked}
+                    disabled={!draft.trim() || inputDisabled}
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8a9eae] to-[#6b7d8f] text-white shadow-md shadow-[#6b7d8f]/25 ring-1 ring-[#c5d4e0] transition hover:from-[#7d8fa0] hover:to-[#5f6f80] disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Enviar"
                   >
                     <IconSend className="h-5 w-5" />
                   </button>
                 </div>
+                {replyBlockedByMeta && (
+                  <p className="mt-2.5 w-full min-w-0 text-[12px] leading-relaxed text-[#6b665e] [overflow-wrap:anywhere]">
+                    Han pasado más de 24 horas desde el último mensaje del huésped, o no hay mensajes
+                    suyos. No puedes responder por política de Meta.
+                  </p>
+                )}
               </div>
             </>
           ) : (

@@ -9,6 +9,10 @@ export type WubbyWhatsappRow = {
   recipient: string | null;
   sender: string | null;
   cotizacion?: string | null;
+  /** p. ej. `audio` (voz transcrito) o `text` */
+  format?: string | null;
+  /** `yes` si el mensaje provocó handoff a humano */
+  cause_request?: string | null;
 } & Record<string, unknown>;
 
 export const WUBBY_TABLE = "Wubby_Whatsapp";
