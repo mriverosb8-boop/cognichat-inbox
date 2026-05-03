@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Conversation } from "@/lib/inbox-types";
-import { useInboxRealtime } from "@/hooks/useInboxRealtime";
+import { type RealtimeUiStatus, useInboxRealtime } from "@/hooks/useInboxRealtime";
 
 type InboxResponse = {
   conversations: Conversation[];
@@ -19,6 +19,18 @@ export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [urgentHandoffBannerVisible, setUrgentHandoffBannerVisible] = useState(false);
+  const [realtimeUiStatus, setRealtimeUiStatus] = useState<RealtimeUiStatus>("waiting");
+  const [realtimeErrorDetail, setRealtimeErrorDetail] = useState<string | undefined>(undefined);
+
+  const dismissUrgentHandoffBanner = useCallback(() => {
+    setUrgentHandoffBannerVisible(false);
+  }, []);
+
+  const onRealtimeConnection = useCallback((status: RealtimeUiStatus, detail?: string) => {
+    setRealtimeUiStatus(status);
+    setRealtimeErrorDetail(status === "error" ? detail : undefined);
+  }, []);
 
   const load = useCallback(async (options?: RefetchOptions) => {
     const silent = options?.silent === true;
@@ -67,6 +79,14 @@ export function useConversations() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!urgentHandoffBannerVisible) return;
+    const t = window.setTimeout(() => {
+      setUrgentHandoffBannerVisible(false);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [urgentHandoffBannerVisible]);
+
   // Realtime: reemplaza el polling. Si llega un evento sin contexto local
   // (p. ej. nueva conversación o mensaje de un teléfono aún no cargado),
   // disparamos un refetch silencioso para reconciliar.
@@ -75,6 +95,10 @@ export function useConversations() {
     onMissingContext: () => {
       void loadRef.current({ silent: true });
     },
+    onUrgentHandoffBanner: () => {
+      setUrgentHandoffBannerVisible(true);
+    },
+    onRealtimeConnection,
   });
 
   return {
@@ -83,5 +107,9 @@ export function useConversations() {
     loading,
     error,
     refetch: load,
+    urgentHandoffBannerVisible,
+    dismissUrgentHandoffBanner,
+    realtimeUiStatus,
+    realtimeErrorDetail,
   };
 }

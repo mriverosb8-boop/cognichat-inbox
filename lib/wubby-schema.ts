@@ -13,6 +13,8 @@ export type WubbyWhatsappRow = {
   format?: string | null;
   /** `yes` si el mensaje provocó handoff a humano */
   cause_request?: string | null;
+  /** `yes` si el caso requiere atención humana (alertas Realtime) */
+  cause_of_request?: string | null;
 } & Record<string, unknown>;
 
 export const WUBBY_TABLE = "Wubby_Whatsapp";

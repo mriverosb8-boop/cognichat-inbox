@@ -17,12 +17,21 @@ import {
   applyConversationRowPatch,
   buildMessageFromWubbyRow,
   findConversationForWubbyRow,
+  messageNeedsHumanAlert,
+  normalizeWaIdentity,
+  resolveHotelWaIdentitiesSet,
 } from "@/lib/chat-utils";
+
+/** Clasificación coherente con el servidor (`mergeConversationsTableWithMessages`). */
+const HOTEL_WA_IDENTITIES = resolveHotelWaIdentitiesSet();
 
 type SetConversations = Dispatch<SetStateAction<Conversation[]>>;
 
 type ConversationsPayload = RealtimePostgresChangesPayload<ConversationDbRow>;
 type WubbyPayload = RealtimePostgresChangesPayload<WubbyWhatsappRow>;
+
+/** Estado visible del chip de conexión Realtime en la barra superior. */
+export type RealtimeUiStatus = "waiting" | "connected" | "error";
 
 export type UseInboxRealtimeOptions = {
   setConversations: SetConversations;
@@ -32,6 +41,10 @@ export type UseInboxRealtimeOptions = {
    * Típicamente dispara un refetch silencioso para reconciliar.
    */
   onMissingContext?: () => void;
+  /** Banner in-app único cuando hay alerta urgente (aunque falle Notification API). */
+  onUrgentHandoffBanner?: () => void;
+  /** Chip: esperando / conectado / error. */
+  onRealtimeConnection?: (status: RealtimeUiStatus, detail?: string) => void;
 };
 
 /** Reordena la lista por `lastActivityIso` descendente. */
@@ -47,6 +60,73 @@ function truncatePreview(preview: string): string {
   return preview.length > 120 ? `${preview.slice(0, 117)}…` : preview;
 }
 
+const URGENT_NOTIFICATION_TITLE = "🚨 Huésped requiere atención humana";
+/** Por defecto 2 min. Para pruebas, cambiar temporalmente (ej. `10 * 1000`). */
+const URGENT_ALERT_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** Clave estable por caso (teléfono / conversación), no por id de mensaje. */
+function readUrgentConversationKey(row: WubbyWhatsappRow): string {
+  const r = row as Record<string, unknown>;
+  const candidates: unknown[] = [
+    r.conversation_id,
+    r.Conversation_ID,
+    r.conversationId,
+    r.from,
+    r.sender,
+    r.phone,
+    r.guest_phone,
+    r.Guest_Phone,
+  ];
+  for (const c of candidates) {
+    if (c == null) continue;
+    const str = String(c).trim();
+    if (!str) continue;
+    const norm = normalizeWaIdentity(str);
+    if (norm) return norm;
+    return str;
+  }
+  return String(row.id);
+}
+
+function buildUrgentHandoffBody(displayNameOrPhone: string, messagePreview: string): string {
+  const who = displayNameOrPhone.trim();
+  const prev = (messagePreview ?? "").trim();
+  if (!who && !prev) {
+    return "Un huésped solicitó atención humana.";
+  }
+  if (!who) {
+    return prev.length > 220 ? `${prev.slice(0, 217)}…` : prev;
+  }
+  if (!prev) {
+    return who.length > 220 ? `${who.slice(0, 217)}…` : who;
+  }
+  const line = `${who}: ${prev}`;
+  return line.length > 180 ? `${line.slice(0, 177)}…` : line;
+}
+
+function playUrgentHandoffBeep(): void {
+  try {
+    type WinAudio = typeof window & { webkitAudioContext?: typeof AudioContext };
+    const AC = window.AudioContext ?? (window as WinAudio).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.25);
+    void ctx.resume?.().catch(() => {});
+  } catch {
+    /* sin audio */
+  }
+}
+
 /**
  * Supabase Realtime para la bandeja.
  * Reemplaza al polling: se suscribe a `public.conversations` y `public.Wubby_Whatsapp`
@@ -55,6 +135,8 @@ function truncatePreview(preview: string): string {
 export function useInboxRealtime({
   setConversations,
   onMissingContext,
+  onUrgentHandoffBanner,
+  onRealtimeConnection,
 }: UseInboxRealtimeOptions) {
   const setConversationsRef = useRef(setConversations);
   setConversationsRef.current = setConversations;
@@ -62,7 +144,38 @@ export function useInboxRealtime({
   const onMissingRef = useRef(onMissingContext);
   onMissingRef.current = onMissingContext;
 
+  const onUrgentBannerRef = useRef(onUrgentHandoffBanner);
+  onUrgentBannerRef.current = onUrgentHandoffBanner;
+
+  const onConnRef = useRef(onRealtimeConnection);
+  onConnRef.current = onRealtimeConnection;
+
+  /** Último aviso urgente por clave de conversación / caso. */
+  const urgentNotifiedAtRef = useRef<Map<string, number>>(new Map());
+  /** Una notificación de escritorio activa por `urgentKey` (cierra la anterior al reemplazar). */
+  const activeDesktopNotificationsRef = useRef<Map<string, Notification>>(new Map());
+
   useEffect(() => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      void Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      for (const n of activeDesktopNotificationsRef.current.values()) {
+        try {
+          n.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      activeDesktopNotificationsRef.current.clear();
+      urgentNotifiedAtRef.current.clear();
+      console.log("[Urgent Alert] dev: cooldown + desktop notification map cleared on realtime mount");
+    }
+
     let supabase: ReturnType<typeof createClient> | null = null;
     let channel: RealtimeChannel | null = null;
 
@@ -70,10 +183,99 @@ export function useInboxRealtime({
       supabase = createClient();
     } catch (e) {
       console.warn("[inbox realtime] cliente no inicializado", e);
+      onConnRef.current?.(
+        "error",
+        e instanceof Error ? e.message : "cliente Supabase no inicializado"
+      );
       return;
     }
 
     const requestMissing = () => onMissingRef.current?.();
+
+    function handleUrgentHandoffRealtimeRow(
+      row: WubbyWhatsappRow,
+      eventType: "INSERT" | "UPDATE",
+      displayNameOrPhone: string,
+      preview: string
+    ): void {
+      console.log("[Urgent Alert] handler reached");
+      console.log("[Urgent Alert] eventType:", eventType);
+      console.log("[Urgent Alert] row:", row);
+
+      const rowRec = row as Record<string, unknown>;
+      const needs = messageNeedsHumanAlert(rowRec);
+      console.log("[Urgent Alert] needsHuman:", needs);
+
+      if (!needs) {
+        console.log("[Urgent Alert] skip: needsHuman is false");
+        return;
+      }
+
+      const urgentKey = readUrgentConversationKey(row);
+      console.log("[Urgent Alert] urgentKey:", urgentKey);
+
+      const now = Date.now();
+      const last = urgentNotifiedAtRef.current.get(urgentKey) ?? 0;
+      console.log("[Urgent Alert] last notification at:", last);
+      console.log(
+        "[Urgent Alert] cooldown remaining ms:",
+        Math.max(0, URGENT_ALERT_COOLDOWN_MS - (now - last))
+      );
+
+      if (now - last < URGENT_ALERT_COOLDOWN_MS) {
+        console.log("[Urgent Alert] skip: cooldown active for key:", urgentKey);
+        return;
+      }
+      urgentNotifiedAtRef.current.set(urgentKey, now);
+
+      queueMicrotask(() => {
+        onUrgentBannerRef.current?.();
+        playUrgentHandoffBeep();
+        const body = buildUrgentHandoffBody(displayNameOrPhone, preview);
+        if (typeof Notification === "undefined") {
+          console.log("[Urgent Alert] skip: Notification API unavailable in-window");
+        } else if (Notification.permission !== "granted") {
+          console.log(
+            "[Urgent Alert] skip: desktop notification not shown (permission:",
+            Notification.permission,
+            ")"
+          );
+        } else {
+          try {
+            const previousNotification = activeDesktopNotificationsRef.current.get(urgentKey);
+            if (previousNotification) {
+              previousNotification.close();
+              activeDesktopNotificationsRef.current.delete(urgentKey);
+            }
+
+            console.log("[Urgent Alert] document has focus:", document.hasFocus());
+            console.log("[Urgent Alert] visibility:", document.visibilityState);
+            console.log("[Urgent Alert] Notification.permission:", Notification.permission);
+
+            const notification = new Notification(URGENT_NOTIFICATION_TITLE, {
+              body,
+              requireInteraction: true,
+            });
+
+            activeDesktopNotificationsRef.current.set(urgentKey, notification);
+
+            notification.onclick = () => {
+              window.focus();
+              notification.close();
+              activeDesktopNotificationsRef.current.delete(urgentKey);
+            };
+
+            notification.onclose = () => {
+              activeDesktopNotificationsRef.current.delete(urgentKey);
+            };
+
+            console.log("[Urgent Alert] notification sent");
+          } catch (e) {
+            console.warn("[Urgent Alert] notification failed (exception)", e);
+          }
+        }
+      });
+    }
 
     const handleConversationEvent = (payload: ConversationsPayload) => {
       const eventType = payload.eventType;
@@ -99,7 +301,6 @@ export function useInboxRealtime({
         return;
       }
 
-      // UPDATE
       setter((prev) => {
         const idx = prev.findIndex((c) => c.id === newRow.id);
         if (idx === -1) {
@@ -112,88 +313,181 @@ export function useInboxRealtime({
       });
     };
 
-    const handleMessageEvent = (payload: WubbyPayload) => {
-      const eventType = payload.eventType;
+    type HandoffQueue = {
+      row: WubbyWhatsappRow;
+      displayNameOrPhone: string;
+      preview: string;
+    } | null;
+
+    const handleWubbyInsert = (payload: WubbyPayload) => {
+      const row = payload.new as WubbyWhatsappRow | null;
+      if (!row) return;
+      const messageId = String(row.id);
       const setter = setConversationsRef.current;
 
-      if (eventType === "INSERT") {
-        const row = payload.new as WubbyWhatsappRow | null;
-        if (!row) return;
-        const messageId = String(row.id);
+      const handoffSlot: { current: HandoffQueue } = { current: null };
 
-        setter((prev) => {
-          const target = findConversationForWubbyRow(prev, row);
-          if (!target) {
-            requestMissing();
-            return prev;
+      setter((prev) => {
+        const target = findConversationForWubbyRow(prev, row);
+        if (!target) {
+          requestMissing();
+          return prev;
+        }
+        if (target.messages.some((m) => m.id === messageId)) return prev;
+
+        const built = buildMessageFromWubbyRow(row, target.guestPhone, HOTEL_WA_IDENTITIES);
+        const rowNeedsUrgent = messageNeedsHumanAlert(row as Record<string, unknown>);
+
+        const urgentVisualPatch =
+          rowNeedsUrgent && target.operationalStatus !== "closed"
+            ? ({
+                request: "pending" as const,
+                needsHuman: true,
+                aiActive: false,
+                operationalStatus: "requires_attention" as const,
+                controlMode: "human" as const,
+              } satisfies Partial<Conversation>)
+            : {};
+
+        if (rowNeedsUrgent) {
+          const name = (target.guest.name ?? "").trim();
+          const phone = (target.guestPhone ?? target.guest.phone ?? "").trim();
+          handoffSlot.current = {
+            row,
+            displayNameOrPhone: name || phone,
+            preview: built.previewRaw,
+          };
+        }
+
+        const updated = prev.map((c) => {
+          if (c.id !== target.id) return c;
+          const shouldBumpPreview =
+            new Date(built.createdAtIso).getTime() >=
+            new Date(c.lastActivityIso).getTime();
+          return {
+            ...c,
+            ...urgentVisualPatch,
+            messages: [...c.messages, built.message],
+            lastMessagePreview: shouldBumpPreview
+              ? truncatePreview(built.previewRaw)
+              : c.lastMessagePreview,
+            lastMessageAt: shouldBumpPreview ? built.lastMessageLabel : c.lastMessageAt,
+            lastActivityIso: shouldBumpPreview ? built.createdAtIso : c.lastActivityIso,
+          };
+        });
+        return sortByActivity(updated);
+      });
+
+      const hp = handoffSlot.current;
+      if (messageNeedsHumanAlert(row as Record<string, unknown>)) {
+        if (hp) {
+          handleUrgentHandoffRealtimeRow(hp.row, "INSERT", hp.displayNameOrPhone, hp.preview);
+        } else {
+          console.log(
+            "[Urgent Alert] INSERT: needsHuman true but no handoff context (conversation not in memory / duplicate id); silent refetch may be needed"
+          );
+        }
+      }
+    };
+
+    const handleWubbyUpdate = (payload: WubbyPayload) => {
+      const newRow = payload.new as WubbyWhatsappRow | null;
+      if (!newRow) return;
+      const oldRow = (payload.old ?? {}) as Record<string, unknown>;
+      const messageId = String(newRow.id);
+      const setter = setConversationsRef.current;
+
+      const wasUrgent = messageNeedsHumanAlert(oldRow);
+      const isUrgent = messageNeedsHumanAlert(newRow as Record<string, unknown>);
+
+      const handoffSlot: { current: HandoffQueue } = { current: null };
+
+      setter((prev) => {
+        let touched = false;
+        const next = prev.map((c) => {
+          const mi = c.messages.findIndex((m) => m.id === messageId);
+          if (mi === -1) return c;
+          const built = buildMessageFromWubbyRow(newRow, c.guestPhone, HOTEL_WA_IDENTITIES);
+          const urgentVisualPatch =
+            isUrgent && c.operationalStatus !== "closed"
+              ? ({
+                  request: "pending" as const,
+                  needsHuman: true,
+                  aiActive: false,
+                  operationalStatus: "requires_attention" as const,
+                  controlMode: "human" as const,
+                } satisfies Partial<Conversation>)
+              : {};
+          const newMsgs = [...c.messages];
+          newMsgs[mi] = built.message;
+          touched = true;
+          const isLast = mi === c.messages.length - 1;
+          if (isUrgent) {
+            const name = (c.guest.name ?? "").trim();
+            const phone = (c.guestPhone ?? c.guest.phone ?? "").trim();
+            handoffSlot.current = {
+              row: newRow,
+              displayNameOrPhone: name || phone,
+              preview: built.previewRaw,
+            };
           }
-          if (target.messages.some((m) => m.id === messageId)) return prev;
-
-          const built = buildMessageFromWubbyRow(row, target.guestPhone);
-          const updated = prev.map((c) => {
-            if (c.id !== target.id) return c;
-            const shouldBumpPreview =
-              new Date(built.createdAtIso).getTime() >=
-              new Date(c.lastActivityIso).getTime();
-            return {
-              ...c,
-              messages: [...c.messages, built.message],
-              lastMessagePreview: shouldBumpPreview
-                ? truncatePreview(built.previewRaw)
-                : c.lastMessagePreview,
-              lastMessageAt: shouldBumpPreview ? built.lastMessageLabel : c.lastMessageAt,
-              lastActivityIso: shouldBumpPreview ? built.createdAtIso : c.lastActivityIso,
-            };
-          });
-          return sortByActivity(updated);
+          return {
+            ...c,
+            ...urgentVisualPatch,
+            messages: newMsgs,
+            lastMessagePreview: isLast
+              ? truncatePreview(built.previewRaw)
+              : c.lastMessagePreview,
+            lastMessageAt: isLast ? built.lastMessageLabel : c.lastMessageAt,
+            lastActivityIso: isLast ? built.createdAtIso : c.lastActivityIso,
+          };
         });
-        return;
-      }
+        return touched ? next : prev;
+      });
 
-      if (eventType === "UPDATE") {
-        const row = payload.new as WubbyWhatsappRow | null;
-        if (!row) return;
-        const messageId = String(row.id);
-        setter((prev) => {
-          let touched = false;
-          const next = prev.map((c) => {
-            const mi = c.messages.findIndex((m) => m.id === messageId);
-            if (mi === -1) return c;
-            const built = buildMessageFromWubbyRow(row, c.guestPhone);
-            const newMsgs = [...c.messages];
-            newMsgs[mi] = built.message;
-            touched = true;
-            const isLast = mi === c.messages.length - 1;
-            return {
-              ...c,
-              messages: newMsgs,
-              lastMessagePreview: isLast
-                ? truncatePreview(built.previewRaw)
-                : c.lastMessagePreview,
-              lastMessageAt: isLast ? built.lastMessageLabel : c.lastMessageAt,
-              lastActivityIso: isLast ? built.createdAtIso : c.lastActivityIso,
-            };
-          });
-          return touched ? next : prev;
-        });
-        return;
-      }
-
-      if (eventType === "DELETE") {
-        const oldRow = payload.old as Partial<WubbyWhatsappRow> | null;
-        if (!oldRow || oldRow.id == null) return;
-        const messageId = String(oldRow.id);
-        setter((prev) =>
-          prev.map((c) => {
-            if (!c.messages.some((m) => m.id === messageId)) return c;
-            return {
-              ...c,
-              messages: c.messages.filter((m) => m.id !== messageId),
-            };
-          })
+      const hp = handoffSlot.current;
+      if (isUrgent && hp) {
+        if (process.env.NODE_ENV === "development" && wasUrgent) {
+          console.log(
+            "[Urgent Alert] UPDATE debug: calling handler while wasUrgent is true (cooldown dedupes)"
+          );
+        }
+        handleUrgentHandoffRealtimeRow(hp.row, "UPDATE", hp.displayNameOrPhone, hp.preview);
+      } else if (isUrgent && !hp) {
+        console.log(
+          "[Urgent Alert] UPDATE: needsHuman true but message not found in local conversations (refetch pending)"
         );
       }
     };
+
+    const handleWubbyDelete = (payload: WubbyPayload) => {
+      const oldRow = payload.old as Partial<WubbyWhatsappRow> | null;
+      if (!oldRow || oldRow.id == null) return;
+      const messageId = String(oldRow.id);
+      const setter = setConversationsRef.current;
+      setter((prev) =>
+        prev.map((c) => {
+          if (!c.messages.some((m) => m.id === messageId)) return c;
+          return {
+            ...c,
+            messages: c.messages.filter((m) => m.id !== messageId),
+          };
+        })
+      );
+    };
+
+    const handleWubbyPostgresChange = (payload: WubbyPayload) => {
+      const et = payload.eventType;
+      if (et === "INSERT") {
+        handleWubbyInsert(payload);
+      } else if (et === "UPDATE") {
+        handleWubbyUpdate(payload);
+      } else if (et === "DELETE") {
+        handleWubbyDelete(payload);
+      }
+    };
+
+    onConnRef.current?.("waiting");
 
     channel = supabase
       .channel("inbox-realtime")
@@ -205,15 +499,33 @@ export function useInboxRealtime({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: WUBBY_TABLE },
-        handleMessageEvent as (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => void
+        handleWubbyPostgresChange as (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => void
       )
       .subscribe((status, err) => {
-        if (err) {
-          console.warn("[inbox realtime] error de suscripción", status, err);
+        if (status === "SUBSCRIBED") {
+          onConnRef.current?.("connected");
+        } else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          onConnRef.current?.("error", err?.message ?? String(status));
+          if (err) {
+            console.warn("[inbox realtime] error de suscripción", status, err);
+          }
         }
       });
 
     return () => {
+      for (const n of activeDesktopNotificationsRef.current.values()) {
+        try {
+          n.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      activeDesktopNotificationsRef.current.clear();
+
       if (channel && supabase) {
         try {
           void supabase.removeChannel(channel);

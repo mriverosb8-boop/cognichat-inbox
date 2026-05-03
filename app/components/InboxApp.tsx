@@ -3,9 +3,15 @@
 import type { SVGProps } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { avatarGradientClass, initials } from "@/lib/avatar";
-import { formatMessageDetailTime } from "@/lib/chat-utils";
+import {
+  formatMessageDetailTime,
+  messageNeedsHumanAlert,
+} from "@/lib/chat-utils";
 import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
+import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { useConversations } from "@/hooks/useConversations";
+import { WUBBY_TABLE } from "@/lib/wubby-schema";
+import { BrandHeaderMark } from "./BrandHeaderMark";
 import { LogoutButton } from "./LogoutButton";
 
 type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "closed";
@@ -220,8 +226,7 @@ function MessageBubble({
   const isAi = m.sender === "ai";
   const isAgent = m.sender === "agent";
 
-  const isHandoffCause =
-    typeof m.causeRequest === "string" && m.causeRequest.trim().toLowerCase() === "yes";
+  const isHandoffCause = messageNeedsHumanAlert(m as unknown as Record<string, unknown>);
 
   const shell = isHandoffCause
     ? isUser
@@ -291,7 +296,17 @@ function MessageBubble({
 }
 
 export default function InboxApp() {
-  const { conversations, setConversations, loading, error, refetch } = useConversations();
+  const {
+    conversations,
+    setConversations,
+    loading,
+    error,
+    refetch,
+    urgentHandoffBannerVisible,
+    dismissUrgentHandoffBanner,
+    realtimeUiStatus,
+    realtimeErrorDetail,
+  } = useConversations();
   const [selectedId, setSelectedId] = useState<string>("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -687,19 +702,47 @@ export default function InboxApp() {
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-full flex-col overflow-x-hidden bg-[#f7f4ee] text-[#1f1f1c] supports-[height:100dvh]:min-h-[100dvh]">
+      {urgentHandoffBannerVisible && (
+        <div
+          className="fixed right-4 top-4 z-[300] flex max-w-[min(100vw-2rem,20rem)] items-start gap-3 rounded-xl border border-amber-400/70 bg-gradient-to-br from-amber-100 to-amber-50/95 px-4 py-3 text-[13px] font-semibold leading-snug text-amber-950 shadow-lg shadow-amber-900/10 ring-1 ring-amber-300/50"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">🚨 Huésped requiere atención humana</span>
+          <button
+            type="button"
+            onClick={dismissUrgentHandoffBanner}
+            className="shrink-0 rounded-lg p-1 text-amber-900/70 transition hover:bg-amber-200/50 hover:text-amber-950"
+            aria-label="Cerrar aviso"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <header
         className={`flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6 ${mobileTab === "chat" ? "max-lg:hidden" : ""}`}
       >
         <div className="flex min-w-0 flex-1 items-center gap-3.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#d4c4a8] to-[#c8a97e] text-sm font-bold tracking-tight text-white shadow-md shadow-[#c8a97e]/20 ring-1 ring-[#e7dfd4]">
-            C
-          </div>
+          <BrandHeaderMark size="sm" />
           <div className="min-w-0">
             <h1 className="truncate text-[15px] font-semibold tracking-tight text-[#1f1f1c]">FerrarIA Inbox</h1>
             <p className="truncate text-[11px] leading-tight text-[#6b665e]">Recepción · IA + agente humano</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <span
+            className={`inline-flex max-w-[min(12rem,calc(100vw-8rem))] truncate rounded-lg border px-2 py-1 text-[10px] font-semibold tabular-nums shadow-sm sm:max-w-none sm:px-2.5 sm:text-[11px] ${
+              realtimeUiStatus === "connected"
+                ? "border-emerald-300/90 bg-emerald-50 text-emerald-950"
+                : realtimeUiStatus === "error"
+                  ? "border-rose-300/90 bg-rose-50 text-rose-950"
+                  : "border-amber-300/80 bg-amber-50/95 text-amber-950"
+            }`}
+            title={`Supabase Realtime: public.${CONVERSATIONS_TABLE}, public.${WUBBY_TABLE}${realtimeErrorDetail ? ` · ${realtimeErrorDetail}` : ""}`}
+          >
+            {realtimeUiStatus === "connected" && "Realtime: conectado"}
+            {realtimeUiStatus === "waiting" && "Realtime: esperando eventos"}
+            {realtimeUiStatus === "error" && "Realtime: error"}
+          </span>
           <span className="hidden rounded-lg border border-[#e7dfd4] bg-[#f1ece4] px-2.5 py-1 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm sm:inline-flex">
             {filterCounts.unread} sin leer
           </span>

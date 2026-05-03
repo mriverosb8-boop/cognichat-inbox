@@ -50,9 +50,13 @@ export interface Message {
    */
   format?: string;
   /**
-   * Columna `cause_request`: `yes` = este mensaje disparó escalación a humano.
+   * Columna `cause_request`: `yes` = disparó escalación (badge en burbuja).
    */
   causeRequest?: string;
+  /**
+   * Columna `cause_of_request`: `yes` = requiere atención humana (alertas Realtime).
+   */
+  causeOfRequest?: string;
   aiMeta?: AiMessageMeta;
 }
 

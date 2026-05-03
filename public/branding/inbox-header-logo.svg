@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+  <rect width="80" height="80" rx="18" fill="#ffffff"/>
+  <path
+    fill="url(#ferrar-brand-mark)"
+    d="M40 22c-9.4 0-17 7.6-17 17 0 7.4 4.7 13.7 11.3 16V64h11.4V55c6.6-2.3 11.3-8.6 11.3-16 0-9.4-7.6-17-17-17Z"
+  />
+  <defs>
+    <linearGradient id="ferrar-brand-mark" x1="22" y1="22" x2="62" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d4c4a8"/>
+      <stop offset="1" stop-color="#c8a97e"/>
+    </linearGradient>
+  </defs>
+</svg>

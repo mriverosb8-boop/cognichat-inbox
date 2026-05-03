@@ -2,22 +2,75 @@ import type { ConversationDbRow } from "@/lib/conversation-schema";
 import type { ControlMode, Conversation, Message, MessageSender, OperationalStatus } from "@/lib/inbox-types";
 import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 
-/** Identidad WhatsApp/Twilio normalizada para comparar (prefijo + dígitos). */
+/** Twilio histórico + WhatsApp Cloud API (Meta); dígitos sin prefijo internacional separado. */
+export const DEFAULT_HOTEL_PHONE_DIGITS = ["16062685670", "573002422890"] as const;
+
+/**
+ * Teléfono solo dígitos para comparar identidades (Twilio `whatsapp:+…`, Meta sin prefijo, etc.).
+ */
+export function normalizePhoneDigits(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/whatsapp:/gi, "")
+    .replace(/\+/g, "")
+    .replace(/\s/g, "")
+    .replace(/\D/g, "");
+}
+
+/** Identidad WhatsApp/Twilio normalizada para comparar (+E.164). */
 export function normalizeWaIdentity(raw: string | null | undefined): string {
-  if (raw == null || typeof raw !== "string") return "";
-  let s = raw.trim();
-  const lower = s.toLowerCase();
-  if (lower.startsWith("whatsapp:")) {
-    s = s.slice("whatsapp:".length).trim();
+  const digits = normalizePhoneDigits(raw);
+  return digits ? `+${digits}` : "";
+}
+
+export type ResolveHotelWaIdentitiesOptions = {
+  /** Si viene definido (p. ej. `TWILIO_WHATSAPP_ADDRESS`), se fusiona al conjunto. */
+  twilioEnv?: string | null;
+  /** CSV opcional adicional (servidor: `HOTEL_WHATSAPP_PHONES`; cliente: `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES`). */
+  extraCsvEnv?: string | null;
+};
+
+/**
+ * Conjunto de líneas del hotel (+E.164) para routing y clasificación de burbujas.
+ * Retrocompatible: incluye Twilio anterior y número Cloud API; ampliable por env.
+ */
+export function resolveHotelWaIdentitiesSet(opts?: ResolveHotelWaIdentitiesOptions): Set<string> {
+  const set = new Set<string>();
+  const add = (raw: string | null | undefined) => {
+    const id = normalizeWaIdentity(raw);
+    if (id) set.add(id);
+  };
+
+  for (const digits of DEFAULT_HOTEL_PHONE_DIGITS) {
+    add(String(digits));
   }
-  s = s.replace(/\s/g, "");
-  if (!s.startsWith("+")) {
-    const digits = s.replace(/\D/g, "");
-    s = digits ? `+${digits}` : "";
-  } else {
-    s = `+${s.slice(1).replace(/\D/g, "")}`;
+
+  add(opts?.twilioEnv ?? process.env.TWILIO_WHATSAPP_ADDRESS);
+  add(process.env.WHATSAPP_BUSINESS_PHONE_NUMBER);
+  add(process.env.META_WHATSAPP_BUSINESS_PHONE);
+
+  const csv =
+    opts?.extraCsvEnv ??
+    process.env.HOTEL_WHATSAPP_PHONES ??
+    process.env.NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES;
+  if (csv) {
+    for (const part of csv.split(",")) add(part.trim());
   }
-  return s;
+
+  return set;
+}
+
+function inferDominantWaBusinessIdentity(rows: WubbyWhatsappRow[]): string | null {
+  const counts = countIdentityOccurrences(rows);
+  let best: string | null = null;
+  let max = 0;
+  for (const [k, v] of counts) {
+    if (v > max) {
+      max = v;
+      best = k;
+    }
+  }
+  return best;
 }
 
 function countIdentityOccurrences(rows: WubbyWhatsappRow[]): Map<string, number> {
@@ -32,41 +85,30 @@ function countIdentityOccurrences(rows: WubbyWhatsappRow[]): Map<string, number>
 }
 
 /**
- * Heurística: el número “central” (Twilio / WhatsApp Business) aparece en más mensajes
- * que los huéspedes 1:1. Si `TWILIO_WHATSAPP_ADDRESS` está definido, tiene prioridad.
+ * Primera línea de negocio inferida (compatibilidad); preferir `resolveHotelWaIdentitiesSet`.
+ * Si hay números conocidos por env/constantes, devuelve uno de ellos; si no, la identidad más frecuente en el histórico.
  */
 export function inferTwilioIdentity(rows: WubbyWhatsappRow[], envTwilio?: string | null): string | null {
-  const fromEnv = normalizeWaIdentity(envTwilio ?? "");
-  if (fromEnv) return fromEnv;
-
-  const counts = countIdentityOccurrences(rows);
-  let best: string | null = null;
-  let max = 0;
-  for (const [k, v] of counts) {
-    if (v > max) {
-      max = v;
-      best = k;
-    }
-  }
-  return best;
+  const known = resolveHotelWaIdentitiesSet({ twilioEnv: envTwilio });
+  const firstKnown = known.values().next().value as string | undefined;
+  if (firstKnown) return firstKnown;
+  return inferDominantWaBusinessIdentity(rows);
 }
 
 /**
  * Obtiene el teléfono del huésped para una fila.
- * Regla: el lado que no es Twilio; si ambos parecen huésped, prioriza sender si no es Twilio.
+ * Regla: si un lado coincide con una línea del hotel (Twilio o Cloud API), el huésped es el otro lado.
  */
-export function inferGuestPhone(
-  row: WubbyWhatsappRow,
-  twilio: string | null
-): string {
+export function inferGuestPhone(row: WubbyWhatsappRow, hotelIdentities: Set<string>): string {
   const s = normalizeWaIdentity(row.sender ?? "");
   const r = normalizeWaIdentity(row.recipient ?? "");
-  if (twilio) {
-    if (s === twilio && r && r !== twilio) return r;
-    if (r === twilio && s && s !== twilio) return s;
-    if (s && s !== twilio) return s;
-    if (r && r !== twilio) return r;
-  }
+  const sHotel = Boolean(s && hotelIdentities.has(s));
+  const rHotel = Boolean(r && hotelIdentities.has(r));
+
+  if (sHotel && r && !hotelIdentities.has(r)) return r;
+  if (rHotel && s && !hotelIdentities.has(s)) return s;
+  if (s && !hotelIdentities.has(s)) return s;
+  if (r && !hotelIdentities.has(r)) return r;
   return s || r || "unknown";
 }
 
@@ -95,6 +137,51 @@ export function readCauseRequest(row: WubbyWhatsappRow): string | undefined {
   return t.length > 0 ? t : undefined;
 }
 
+/** Columna `cause_of_request` (alerta Realtime: requiere humano). */
+export function readCauseOfRequestColumn(row: WubbyWhatsappRow): string | undefined {
+  const v = getRowField(row, "cause_of_request", "Cause_Of_Request", "causeOfRequest");
+  if (v == null) return undefined;
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+/**
+ * Misma regla para badge “Solicitó agente humano”, banner y notificación de escritorio.
+ * Acepta fila Supabase o `Message` (campos en camelCase).
+ */
+export function messageNeedsHumanAlert(messageOrRow: Record<string, unknown>): boolean {
+  const raw =
+    messageOrRow["cause_of_request"] ??
+    messageOrRow["Cause_Of_Request"] ??
+    messageOrRow["causeOfRequest"] ??
+    messageOrRow["cause_request"] ??
+    messageOrRow["Cause_Request"] ??
+    messageOrRow["causeRequest"] ??
+    messageOrRow["request"] ??
+    messageOrRow["requires_human"] ??
+    messageOrRow["requiresHuman"] ??
+    messageOrRow["needs_human"] ??
+    messageOrRow["needsHuman"];
+
+  const normalized = String(raw ?? "").trim().toLowerCase();
+
+  return (
+    raw === true ||
+    normalized === "yes" ||
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "si" ||
+    normalized === "sí"
+  );
+}
+
+/** @deprecated Preferir messageNeedsHumanAlert */
+export function messageRowRequiresHumanUrgent(row: WubbyWhatsappRow): boolean {
+  return messageNeedsHumanAlert(row as Record<string, unknown>);
+}
+
 export function toBool(v: unknown, defaultVal = false): boolean {
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return v !== 0;
@@ -118,12 +205,19 @@ export function readNeedsHuman(row: WubbyWhatsappRow): boolean {
 
 /**
  * Clasificación de mensaje para la burbuja.
- * Heurística: mensaje del huésped = user; salida desde Twilio = ai por defecto.
- * Si en el futuro añades una columna (p. ej. `message_author` o `sender_role`), úsala aquí.
+ * - Sender = línea hotel → saliente (IA/agente por defecto).
+ * - Recipient = línea hotel y sender no es hotel → entrante huésped.
+ * Columnas opcionales (`message_author`, `sender_role`, `from_ai`, …) tienen prioridad cuando existen.
  */
-export function classifyMessageSender(row: WubbyWhatsappRow, guestNorm: string, twilioNorm: string | null): MessageSender {
+export function classifyMessageSender(
+  row: WubbyWhatsappRow,
+  guestNorm: string,
+  hotelIdentities: Set<string>
+): MessageSender {
   const s = normalizeWaIdentity(row.sender ?? "");
-  if (s === guestNorm) return "user";
+  const r = normalizeWaIdentity(row.recipient ?? "");
+
+  if (guestNorm && s === guestNorm) return "user";
 
   const explicit =
     getRowField(row, "message_author", "sender_role", "Sender Role", "role", "tipo", "author") ??
@@ -140,9 +234,26 @@ export function classifyMessageSender(row: WubbyWhatsappRow, guestNorm: string, 
   const senderLower = String(row.sender ?? "").toLowerCase();
   if (senderLower.includes("agent") || senderLower.includes("human")) return "agent";
 
-  if (twilioNorm && s === twilioNorm) {
-    /* Twilio / WA Business: sin metadata, asumimos IA; los mensajes humanos reales deberían etiquetarse en n8n/BD. */
+  const directionRaw = getRowField(row, "direction", "Direction");
+  if (typeof directionRaw === "string") {
+    const d = directionRaw.trim().toLowerCase();
+    if (d === "inbound" || d === "incoming") return "user";
+    if (d === "outbound" || d === "outgoing") return "ai";
+  }
+
+  const senderTypeRaw = getRowField(row, "sender_type", "senderType", "Sender_Type");
+  if (typeof senderTypeRaw === "string") {
+    const st = senderTypeRaw.trim().toLowerCase();
+    if (/guest|visitor|customer|^user$/i.test(st)) return "user";
+    if (/human|^agent$|staff|employee/i.test(st)) return "agent";
+    if (/ai|assistant|bot|^business$/i.test(st)) return "ai";
+  }
+
+  if (s && hotelIdentities.has(s)) {
     return "ai";
+  }
+  if (r && hotelIdentities.has(r) && (!s || !hotelIdentities.has(s))) {
+    return "user";
   }
 
   return "ai";
@@ -247,11 +358,13 @@ export function mergeConversationsTableWithMessages(
   const sortedMsgs = [...msgRows].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
-  const twilio = inferTwilioIdentity(sortedMsgs, options.twilioEnv ?? process.env.TWILIO_WHATSAPP_ADDRESS);
+  const hotelIdentities = resolveHotelWaIdentitiesSet({
+    twilioEnv: options.twilioEnv ?? process.env.TWILIO_WHATSAPP_ADDRESS,
+  });
 
   const messagesByPhone = new Map<string, WubbyWhatsappRow[]>();
   for (const row of sortedMsgs) {
-    const g = normalizeWaIdentity(inferGuestPhone(row, twilio));
+    const g = normalizeWaIdentity(inferGuestPhone(row, hotelIdentities));
     if (!g || g === "unknown") continue;
     const list = messagesByPhone.get(g) ?? [];
     list.push(row);
@@ -279,17 +392,19 @@ export function mergeConversationsTableWithMessages(
 
     const title = displayGuestName(cr.guest_name, phoneDisplay);
 
-    const messages: Message[] = msgList.map((row) => {
-      const fmt = readMessageFormat(row);
-      const cr = readCauseRequest(row);
+    const messages: Message[] = msgList.map((msgRow) => {
+      const fmt = readMessageFormat(msgRow);
+      const causeReqHandoff = readCauseRequest(msgRow);
+      const causeOfReq = readCauseOfRequestColumn(msgRow);
       return {
-        id: String(row.id),
-        body: String(row.message ?? "").trim() || "(vacío)",
-        sentAt: formatMessageDetailTime(row.created_at),
-        sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
-        sender: classifyMessageSender(row, guestPhone, twilio),
+        id: String(msgRow.id),
+        body: String(msgRow.message ?? "").trim() || "(vacío)",
+        sentAt: formatMessageDetailTime(msgRow.created_at),
+        sentAtIso: typeof msgRow.created_at === "string" ? msgRow.created_at : String(msgRow.created_at ?? ""),
+        sender: classifyMessageSender(msgRow, guestPhone, hotelIdentities),
         ...(fmt ? { format: fmt } : {}),
-        ...(cr ? { causeRequest: cr } : {}),
+        ...(causeReqHandoff ? { causeRequest: causeReqHandoff } : {}),
+        ...(causeOfReq ? { causeOfRequest: causeOfReq } : {}),
       };
     });
 
@@ -351,14 +466,15 @@ export function guestSeed(guestPhone: string): string {
 
 /**
  * Dado un row de `Wubby_Whatsapp` y el teléfono del huésped (conversación destino),
- * deriva el `Message` que hay que insertar en la bandeja.
+ * deriva el `Message` para Realtime / UI incremental.
  *
- * Usa el "lado opuesto al huésped" como identidad de Twilio para clasificar IA/Humano,
- * sin necesidad de conocer el valor global de `TWILIO_WHATSAPP_ADDRESS` en cliente.
+ * `hotelIdentities` debe coincidir con merge del servidor (`mergeConversationsTableWithMessages`);
+ * en cliente usar `resolveHotelWaIdentitiesSet()` (incluye `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES` si la defines).
  */
 export function buildMessageFromWubbyRow(
   row: WubbyWhatsappRow,
-  guestPhone: string
+  guestPhone: string,
+  hotelIdentities: Set<string>
 ): {
   message: Message;
   previewRaw: string;
@@ -366,15 +482,13 @@ export function buildMessageFromWubbyRow(
   lastMessageLabel: string;
 } {
   const guestNorm = normalizeWaIdentity(guestPhone);
-  const s = normalizeWaIdentity(row.sender ?? "");
-  const r = normalizeWaIdentity(row.recipient ?? "");
-  const twilioSide = s === guestNorm ? (r || null) : (s || null);
-  const sender = classifyMessageSender(row, guestNorm, twilioSide);
+  const sender = classifyMessageSender(row, guestNorm, hotelIdentities);
 
   const body = String(row.message ?? "").trim() || "(vacío)";
   const previewRaw = String(row.message ?? "").trim() || "—";
   const fmt = readMessageFormat(row);
-  const cr = readCauseRequest(row);
+  const causeReqHandoff = readCauseRequest(row);
+  const causeOfReq = readCauseOfRequestColumn(row);
 
   return {
     message: {
@@ -384,7 +498,8 @@ export function buildMessageFromWubbyRow(
       sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
       sender,
       ...(fmt ? { format: fmt } : {}),
-      ...(cr ? { causeRequest: cr } : {}),
+      ...(causeReqHandoff ? { causeRequest: causeReqHandoff } : {}),
+      ...(causeOfReq ? { causeOfRequest: causeOfReq } : {}),
     },
     previewRaw,
     createdAtIso: row.created_at,
