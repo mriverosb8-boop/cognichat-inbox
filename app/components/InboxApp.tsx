@@ -13,6 +13,7 @@ import { useConversations } from "@/hooks/useConversations";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { BrandHeaderMark } from "./BrandHeaderMark";
 import { LogoutButton } from "./LogoutButton";
+import { StartConversationModal } from "./StartConversationModal";
 
 type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "closed";
 
@@ -67,6 +68,14 @@ function IconSearch(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  );
+}
+
+function IconMore(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 8.25a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM12 13.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM12 18.75a1.5 1.5 0 110-3 1.5 1.5 0 010 3z" />
     </svg>
   );
 }
@@ -317,11 +326,40 @@ export default function InboxApp() {
   const [sendWarning, setSendWarning] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resolvingRequest, setResolvingRequest] = useState(false);
+  const [globalActionsOpen, setGlobalActionsOpen] = useState(false);
+  const [startConversationOpen, setStartConversationOpen] = useState(false);
+  const [templateToast, setTemplateToast] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
+  const globalActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActionError(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!globalActionsOpen) return;
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!globalActionsRef.current?.contains(target)) {
+        setGlobalActionsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [globalActionsOpen]);
+
+  useEffect(() => {
+    if (!templateToast) return;
+
+    const timeout = window.setTimeout(() => setTemplateToast(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [templateToast]);
 
   useEffect(() => {
     if (conversations.length === 0) return;
@@ -718,6 +756,18 @@ export default function InboxApp() {
           </button>
         </div>
       )}
+      {templateToast && (
+        <div
+          className={`fixed right-4 top-4 z-[320] max-w-[min(100vw-2rem,22rem)] rounded-xl border px-4 py-3 text-[13px] font-semibold leading-snug shadow-lg ring-1 ${
+            templateToast.type === "success"
+              ? "border-emerald-300/80 bg-emerald-50 text-emerald-950 shadow-emerald-900/10 ring-emerald-200/70"
+              : "border-rose-300/80 bg-rose-50 text-rose-950 shadow-rose-900/10 ring-rose-200/70"
+          }`}
+          role={templateToast.type === "success" ? "status" : "alert"}
+        >
+          {templateToast.message}
+        </div>
+      )}
       <header
         className={`flex h-[52px] shrink-0 items-center border-b border-[#e7dfd4] bg-white/90 px-4 shadow-[0_1px_0_rgba(31,31,28,0.04)] backdrop-blur-xl lg:h-14 lg:px-6 ${mobileTab === "chat" ? "max-lg:hidden" : ""}`}
       >
@@ -788,9 +838,41 @@ export default function InboxApp() {
                 <h2 className="text-[13px] font-semibold uppercase tracking-wider text-[#6b665e]">Cola operativa</h2>
                 <p className="mt-0.5 text-[11px] text-[#9c968c]">Estado IA / prioridad / propiedad</p>
               </div>
-              <span className="rounded-md border border-[#e7dfd4] bg-[#f1ece4] px-2 py-0.5 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm">
-                {filtered.length}/{conversations.length}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="rounded-md border border-[#e7dfd4] bg-[#f1ece4] px-2 py-0.5 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm">
+                  {filtered.length}/{conversations.length}
+                </span>
+                <div ref={globalActionsRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setGlobalActionsOpen((open) => !open)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#e7dfd4] bg-white text-[#6b665e] shadow-sm transition hover:bg-[#f1ece4] hover:text-[#1f1f1c]"
+                    aria-label="Abrir acciones"
+                    aria-haspopup="menu"
+                    aria-expanded={globalActionsOpen}
+                  >
+                    <IconMore className="h-4 w-4" aria-hidden />
+                  </button>
+                  {globalActionsOpen && (
+                    <div
+                      className="absolute right-0 top-[calc(100%+0.5rem)] z-[230] w-56 overflow-hidden rounded-xl border border-[#e7dfd4] bg-white py-1.5 shadow-xl shadow-[#1f1f1c]/10 ring-1 ring-black/[0.04]"
+                      role="menu"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGlobalActionsOpen(false);
+                          setStartConversationOpen(true);
+                        }}
+                        className="flex w-full items-center px-3.5 py-2.5 text-left text-[13px] font-semibold text-[#1f1f1c] transition hover:bg-[#f8f6f2]"
+                        role="menuitem"
+                      >
+                        Comenzar conversación
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <label className="relative block">
               <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9c968c]" />
@@ -1138,6 +1220,19 @@ export default function InboxApp() {
           </div>
         </div>
       )}
+      <StartConversationModal
+        open={startConversationOpen}
+        onClose={() => setStartConversationOpen(false)}
+        onSuccess={() =>
+          setTemplateToast({ type: "success", message: "Plantilla enviada correctamente" })
+        }
+        onError={() =>
+          setTemplateToast({
+            type: "error",
+            message: "No se pudo enviar la plantilla. Intenta nuevamente.",
+          })
+        }
+      />
     </div>
   );
 }

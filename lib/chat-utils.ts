@@ -2,9 +2,6 @@ import type { ConversationDbRow } from "@/lib/conversation-schema";
 import type { ControlMode, Conversation, Message, MessageSender, OperationalStatus } from "@/lib/inbox-types";
 import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 
-/** Twilio histórico + WhatsApp Cloud API (Meta); dígitos sin prefijo internacional separado. */
-export const DEFAULT_HOTEL_PHONE_DIGITS = ["16062685670", "573002422890"] as const;
-
 /**
  * Teléfono solo dígitos para comparar identidades (Twilio `whatsapp:+…`, Meta sin prefijo, etc.).
  */
@@ -17,6 +14,32 @@ export function normalizePhoneDigits(value: string | null | undefined): string {
     .replace(/\D/g, "");
 }
 
+export function parseHotelPhoneDigitsCsv(raw: string | null | undefined): string[] {
+  return String(raw ?? "")
+    .split(",")
+    .map((value) => normalizePhoneDigits(value))
+    .filter(Boolean);
+}
+
+export function getHotelPhoneDigitsFromEnv(): string[] {
+  const values = parseHotelPhoneDigitsCsv(
+    process.env.HOTEL_WHATSAPP_PHONE_DIGITS ??
+      process.env.NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS
+  );
+
+  if (values.length > 0) {
+    return values;
+  }
+
+  // Fallback seguro para desarrollo: sin líneas reales hardcodeadas.
+  // En producción configura HOTEL_WHATSAPP_PHONE_DIGITS o
+  // NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS en Vercel.
+  return [];
+}
+
+/** Líneas WhatsApp del hotel en dígitos, leídas desde variables de entorno. */
+export const DEFAULT_HOTEL_PHONE_DIGITS = getHotelPhoneDigitsFromEnv();
+
 /** Identidad WhatsApp/Twilio normalizada para comparar (+E.164). */
 export function normalizeWaIdentity(raw: string | null | undefined): string {
   const digits = normalizePhoneDigits(raw);
@@ -26,13 +49,14 @@ export function normalizeWaIdentity(raw: string | null | undefined): string {
 export type ResolveHotelWaIdentitiesOptions = {
   /** Si viene definido (p. ej. `TWILIO_WHATSAPP_ADDRESS`), se fusiona al conjunto. */
   twilioEnv?: string | null;
-  /** CSV opcional adicional (servidor: `HOTEL_WHATSAPP_PHONES`; cliente: `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES`). */
+  /** CSV opcional adicional para pruebas o inyección explícita. */
   extraCsvEnv?: string | null;
 };
 
 /**
  * Conjunto de líneas del hotel (+E.164) para routing y clasificación de burbujas.
- * Retrocompatible: incluye Twilio anterior y número Cloud API; ampliable por env.
+ * En producción configura `HOTEL_WHATSAPP_PHONE_DIGITS` (server) o
+ * `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS` si la clasificación corre en cliente.
  */
 export function resolveHotelWaIdentitiesSet(opts?: ResolveHotelWaIdentitiesOptions): Set<string> {
   const set = new Set<string>();
@@ -51,8 +75,8 @@ export function resolveHotelWaIdentitiesSet(opts?: ResolveHotelWaIdentitiesOptio
 
   const csv =
     opts?.extraCsvEnv ??
-    process.env.HOTEL_WHATSAPP_PHONES ??
-    process.env.NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES;
+    process.env.HOTEL_WHATSAPP_PHONE_DIGITS ??
+    process.env.NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS;
   if (csv) {
     for (const part of csv.split(",")) add(part.trim());
   }
@@ -469,7 +493,7 @@ export function guestSeed(guestPhone: string): string {
  * deriva el `Message` para Realtime / UI incremental.
  *
  * `hotelIdentities` debe coincidir con merge del servidor (`mergeConversationsTableWithMessages`);
- * en cliente usar `resolveHotelWaIdentitiesSet()` (incluye `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONES` si la defines).
+ * en cliente usar `resolveHotelWaIdentitiesSet()` con `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS`.
  */
 export function buildMessageFromWubbyRow(
   row: WubbyWhatsappRow,
