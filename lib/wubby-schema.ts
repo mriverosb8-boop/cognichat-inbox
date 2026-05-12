@@ -11,6 +11,17 @@ export type WubbyWhatsappRow = {
   cotizacion?: string | null;
   /** p. ej. `audio` (voz transcrito) o `text` */
   format?: string | null;
+  message_type?: string | null;
+  media_url?: string | null;
+  media_storage_path?: string | null;
+  media_mime_type?: string | null;
+  media_caption?: string | null;
+  media_meta_id?: string | null;
+  media_bucket?: string | null;
+  meta_media_id?: string | null;
+  storage_path?: string | null;
+  image_url?: string | null;
+  file_url?: string | null;
   /** `yes` si el mensaje provocó handoff a humano */
   cause_request?: string | null;
   /** `yes` si el caso requiere atención humana (alertas Realtime) */

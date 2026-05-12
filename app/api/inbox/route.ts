@@ -46,6 +46,9 @@ export async function GET() {
     const conversations = mergeConversationsTableWithMessages(convRows, msgRows, {
       twilioEnv: process.env.TWILIO_WHATSAPP_ADDRESS,
     });
+    conversations.sort((a, b) => {
+      return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+    });
 
     return NextResponse.json({
       conversations,

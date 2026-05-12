@@ -10,6 +10,12 @@ type InboxResponse = {
   error?: string;
 };
 
+function sortByLastActivity(list: Conversation[]): Conversation[] {
+  return [...list].sort((a, b) => {
+    return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+  });
+}
+
 export type RefetchOptions = {
   /** Si es true, no muestra el estado global de carga ni vacía la lista en error (ideal para reconciliación). */
   silent?: boolean;
@@ -44,7 +50,8 @@ export function useConversations() {
       if (!res.ok) {
         throw new Error(json.error ?? "No se pudo cargar la bandeja");
       }
-      setConversations(json.conversations ?? []);
+      const sorted = sortByLastActivity(json.conversations ?? []);
+      setConversations(sorted);
       setError(null);
     } catch (e) {
       if (!silent) {

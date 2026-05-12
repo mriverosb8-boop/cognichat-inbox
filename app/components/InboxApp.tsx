@@ -20,6 +20,12 @@ type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "clo
 /** Ventana de conversación (WhatsApp / Meta) desde el último mensaje con `sender: "user"`. */
 const META_INBOX_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+function sortConversationsByActivity(list: Conversation[]): Conversation[] {
+  return [...list].sort((a, b) => {
+    return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+  });
+}
+
 function isReplyBlockedByMetaPolicy(messages: Message[]): boolean {
   const fromGuest = messages.filter((m) => m.sender === "user");
   if (fromGuest.length === 0) {
@@ -222,6 +228,141 @@ function Avatar({
   );
 }
 
+function PrivateWhatsAppImage({
+  message,
+}: {
+  message: Message;
+}) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(message.mediaUrl ?? null);
+  const [status, setStatus] = useState<"idle" | "loading" | "error">(
+    message.mediaUrl ? "idle" : "loading"
+  );
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (message.mediaUrl) {
+      setSignedUrl(message.mediaUrl);
+      setStatus("idle");
+      return;
+    }
+
+    if (!message.mediaStoragePath) {
+      setSignedUrl(null);
+      setStatus("error");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadSignedUrl() {
+      setSignedUrl(null);
+      setStatus("loading");
+
+      try {
+        const params = new URLSearchParams();
+        params.set("path", message.mediaStoragePath!);
+        if (message.mediaBucket) params.set("bucket", message.mediaBucket);
+
+        const response = await fetch(`/api/media/signed-url?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`signed-url ${response.status}`);
+        }
+
+        const payload = (await response.json()) as { signedUrl?: string };
+        if (!payload.signedUrl) {
+          throw new Error("signed-url vacío");
+        }
+
+        setSignedUrl(payload.signedUrl);
+        setStatus("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSignedUrl(null);
+        setStatus("error");
+      }
+    }
+
+    void loadSignedUrl();
+
+    return () => {
+      controller.abort();
+    };
+  }, [message.mediaBucket, message.mediaStoragePath, message.mediaUrl]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
+  if (status === "loading") {
+    return <p className="text-sm text-[#6b665e]">Cargando imagen...</p>;
+  }
+
+  if (!signedUrl || status === "error") {
+    return <p className="text-sm text-[#6b665e]">No se pudo cargar la imagen</p>;
+  }
+
+  const alt = message.body || "Imagen enviada por WhatsApp";
+
+  return (
+    <>
+      <img
+        src={signedUrl}
+        alt={alt}
+        title="Abrir imagen"
+        onClick={() => setIsOpen(true)}
+        className="max-w-[260px] max-h-80 cursor-pointer rounded-xl border border-black/10 object-cover hover:opacity-90"
+      />
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setIsOpen(false)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1.5 text-sm font-semibold text-black shadow"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsOpen(false);
+            }}
+            aria-label="Cerrar imagen"
+          >
+            ✕
+          </button>
+
+          <div className="flex max-h-[95vh] max-w-[95vw] flex-col items-center gap-3">
+            <img
+              src={signedUrl}
+              alt={alt}
+              className="max-h-[90vh] max-w-[95vw] rounded-xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            {message.body ? (
+              <p
+                className="max-w-[95vw] whitespace-pre-wrap break-words rounded-lg bg-black/40 px-3 py-2 text-center text-sm text-white"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {message.body}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function MessageBubble({
   m,
   guestName,
@@ -253,6 +394,7 @@ function MessageBubble({
   const LabelIcon = isAi ? IconSparkles : isAgent ? IconUserCircle : IconGuest;
   const isTranscribedVoice =
     isUser && typeof m.format === "string" && m.format.trim().toLowerCase() === "audio";
+  const hasImageSource = Boolean(m.mediaUrl || m.mediaStoragePath);
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -287,7 +429,14 @@ function MessageBubble({
               </span>
             </p>
           )}
-          <p className="whitespace-pre-wrap break-words">{m.body}</p>
+          {m.messageType === "image" && hasImageSource ? (
+            <div className="flex max-w-full flex-col gap-2">
+              <PrivateWhatsAppImage message={m} />
+              {m.body ? <p className="mt-2 whitespace-pre-wrap break-words">{m.body}</p> : null}
+            </div>
+          ) : (
+            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+          )}
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:mt-2 sm:gap-x-3">
             <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
               {m.sentAt}
@@ -421,7 +570,7 @@ export default function InboxApp() {
       );
     }
 
-    return list;
+    return sortConversationsByActivity(list);
   }, [conversations, query, statusFilter, propertyFilter]);
 
   const scrollToBottom = useCallback(() => {

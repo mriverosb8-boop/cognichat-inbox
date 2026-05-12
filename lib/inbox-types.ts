@@ -49,6 +49,13 @@ export interface Message {
    * Columna `format` en Wubby_Whatsapp: `audio` = voz transcrito, `text` = texto, etc.
    */
   format?: string;
+  messageType?: "text" | "image" | "audio" | "document" | string;
+  mediaUrl?: string | null;
+  mediaStoragePath?: string | null;
+  mediaMimeType?: string | null;
+  mediaCaption?: string | null;
+  mediaBucket?: string | null;
+  metaMediaId?: string | null;
   /**
    * Columna `cause_request`: `yes` = disparó escalación (badge en burbuja).
    */

@@ -152,6 +152,89 @@ export function readMessageFormat(row: WubbyWhatsappRow): string | undefined {
   return t.length > 0 ? t : undefined;
 }
 
+function readStringField(row: WubbyWhatsappRow, ...keys: string[]): string | undefined {
+  const v = getRowField(row, ...keys);
+  if (v == null) return undefined;
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+function readMediaUrl(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(
+    row,
+    "media_url",
+    "mediaUrl",
+    "Media_Url",
+    "Media_URL",
+    "image_url",
+    "imageUrl",
+    "file_url",
+    "fileUrl",
+    "url"
+  );
+}
+
+function readMediaMimeType(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(row, "media_mime_type", "mediaMimeType", "mime_type", "Mime_Type");
+}
+
+function readMediaStoragePath(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(row, "media_storage_path", "mediaStoragePath", "storage_path");
+}
+
+function readMediaCaption(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(row, "media_caption", "mediaCaption", "caption");
+}
+
+function readMediaBucket(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(row, "media_bucket", "mediaBucket", "bucket");
+}
+
+function readMetaMediaId(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(row, "media_meta_id", "mediaMetaId", "meta_media_id", "metaMediaId", "media_id", "Media_Id");
+}
+
+function readMessageType(row: WubbyWhatsappRow, format?: string): string | undefined {
+  return readStringField(row, "message_type", "messageType", "Message_Type", "Message Type") ?? format;
+}
+
+function mediaUrlLooksLikeImage(url: string): boolean {
+  const withoutQuery = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
+  return /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/.test(withoutQuery);
+}
+
+function readMessageMedia(row: WubbyWhatsappRow): {
+  messageType: string;
+  mediaUrl: string | null;
+  mediaStoragePath: string | null;
+  mediaMimeType: string | null;
+  mediaCaption: string | null;
+  mediaBucket: string | null;
+  metaMediaId: string | null;
+} {
+  const fmt = readMessageFormat(row);
+  const declaredType = readMessageType(row, fmt);
+  const mediaUrl = readMediaUrl(row) ?? null;
+  const mediaStoragePath = readMediaStoragePath(row) ?? null;
+  const mediaMimeType = readMediaMimeType(row) ?? null;
+  const mediaCaption = readMediaCaption(row) ?? null;
+  const mediaBucket = readMediaBucket(row) ?? null;
+  const metaMediaId = readMetaMediaId(row) ?? null;
+  const normalizedType = declaredType?.trim().toLowerCase();
+  const normalizedMime = mediaMimeType?.trim().toLowerCase();
+  const isImageByMime = normalizedMime?.startsWith("image/") ?? false;
+  const isImageByType = normalizedType === "image";
+  const isImageByUrl = mediaUrl ? mediaUrlLooksLikeImage(mediaUrl) : false;
+
+  const messageType =
+    isImageByType || isImageByMime || Boolean(mediaStoragePath) || isImageByUrl
+      ? "image"
+      : declaredType ?? "text";
+
+  return { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaBucket, metaMediaId };
+}
+
 /** Columna `cause_request` (`yes` = disparó handoff a humano). */
 export function readCauseRequest(row: WubbyWhatsappRow): string | undefined {
   const v = getRowField(row, "cause_request", "Cause_Request", "causeRequest");
@@ -403,10 +486,11 @@ export function mergeConversationsTableWithMessages(
     const msgList = guestPhone ? messagesByPhone.get(guestPhone) ?? [] : [];
 
     const lastRow = msgList.length > 0 ? msgList[msgList.length - 1]! : null;
-    const lastPreview = lastRow
-      ? String(lastRow.message ?? "").trim() || "—"
-      : "Sin mensajes";
-    const lastAt = lastRow ? formatMessageListTime(lastRow.created_at) : "—";
+    const lastMessage = lastRow
+      ? buildMessageFromWubbyRow(lastRow, guestPhone, hotelIdentities)
+      : null;
+    const lastPreview = lastMessage ? lastMessage.previewRaw : "Sin mensajes";
+    const lastAt = lastMessage ? lastMessage.lastMessageLabel : "—";
 
     const { operationalStatus, controlMode } = mapOperationalFromConversationRow(cr);
     const needsHuman = readBoolCol(cr.needs_human, false);
@@ -416,27 +500,11 @@ export function mergeConversationsTableWithMessages(
 
     const title = displayGuestName(cr.guest_name, phoneDisplay);
 
-    const messages: Message[] = msgList.map((msgRow) => {
-      const fmt = readMessageFormat(msgRow);
-      const causeReqHandoff = readCauseRequest(msgRow);
-      const causeOfReq = readCauseOfRequestColumn(msgRow);
-      return {
-        id: String(msgRow.id),
-        body: String(msgRow.message ?? "").trim() || "(vacío)",
-        sentAt: formatMessageDetailTime(msgRow.created_at),
-        sentAtIso: typeof msgRow.created_at === "string" ? msgRow.created_at : String(msgRow.created_at ?? ""),
-        sender: classifyMessageSender(msgRow, guestPhone, hotelIdentities),
-        ...(fmt ? { format: fmt } : {}),
-        ...(causeReqHandoff ? { causeRequest: causeReqHandoff } : {}),
-        ...(causeOfReq ? { causeOfRequest: causeOfReq } : {}),
-      };
-    });
+    const messages: Message[] = msgList.map(
+      (msgRow) => buildMessageFromWubbyRow(msgRow, guestPhone, hotelIdentities).message
+    );
 
-    const lastActivityIso =
-      lastRow &&
-      new Date(lastRow.created_at).getTime() > new Date(cr.updated_at).getTime()
-        ? lastRow.created_at
-        : cr.updated_at;
+    const lastActivityIso = lastRow ? lastRow.created_at : cr.created_at || cr.updated_at;
 
     const guest = {
       id: cr.id,
@@ -508,9 +576,13 @@ export function buildMessageFromWubbyRow(
   const guestNorm = normalizeWaIdentity(guestPhone);
   const sender = classifyMessageSender(row, guestNorm, hotelIdentities);
 
-  const body = String(row.message ?? "").trim() || "(vacío)";
-  const previewRaw = String(row.message ?? "").trim() || "—";
+  const messageRaw = String(row.message ?? "").trim();
   const fmt = readMessageFormat(row);
+  const { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaBucket, metaMediaId } =
+    readMessageMedia(row);
+  const isImage = messageType.trim().toLowerCase() === "image";
+  const body = messageRaw || mediaCaption || (isImage ? "" : "(vacío)");
+  const previewRaw = body || (isImage ? "📷 Imagen" : "—");
   const causeReqHandoff = readCauseRequest(row);
   const causeOfReq = readCauseOfRequestColumn(row);
 
@@ -522,6 +594,13 @@ export function buildMessageFromWubbyRow(
       sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
       sender,
       ...(fmt ? { format: fmt } : {}),
+      messageType,
+      mediaUrl,
+      mediaStoragePath,
+      mediaMimeType,
+      mediaCaption,
+      mediaBucket,
+      metaMediaId,
       ...(causeReqHandoff ? { causeRequest: causeReqHandoff } : {}),
       ...(causeOfReq ? { causeOfRequest: causeOfReq } : {}),
     },
@@ -570,12 +649,6 @@ export function applyConversationRowPatch(
       ? String(row.cotizacion)
       : null;
 
-  const updatedIso = row.updated_at || existing.lastActivityIso;
-  const lastActivityIso =
-    new Date(updatedIso).getTime() > new Date(existing.lastActivityIso).getTime()
-      ? updatedIso
-      : existing.lastActivityIso;
-
   return {
     ...existing,
     guest: {
@@ -595,6 +668,5 @@ export function applyConversationRowPatch(
     request: requestValue,
     operationalStatus,
     controlMode,
-    lastActivityIso,
   };
 }
