@@ -83,12 +83,13 @@ export async function PATCH(request: Request) {
       action !== "reactivate_ai" &&
       action !== "completed" &&
       action !== "resolve_request" &&
-      action !== "reopen"
+      action !== "reopen" &&
+      action !== "mark_read"
     ) {
       return NextResponse.json(
         {
           error:
-            "action debe ser human_control, reactivate_ai, completed, resolve_request o reopen",
+            "action debe ser human_control, reactivate_ai, completed, resolve_request, reopen o mark_read",
         },
         { status: 400 }
       );
@@ -112,12 +113,16 @@ export async function PATCH(request: Request) {
           needs_human: false,
           ai_active: true,
           status: "open",
+          unread_count: 0,
+          last_read_at: now,
         };
         break;
       case "completed":
         patch = {
           ...patch,
           status: "completed",
+          unread_count: 0,
+          last_read_at: now,
         };
         break;
       case "resolve_request":
@@ -133,6 +138,13 @@ export async function PATCH(request: Request) {
         patch = {
           ...patch,
           status: "open",
+        };
+        break;
+      case "mark_read":
+        patch = {
+          ...patch,
+          unread_count: 0,
+          last_read_at: now,
         };
         break;
       default:

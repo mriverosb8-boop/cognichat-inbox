@@ -454,18 +454,19 @@ function MessageBubble({
 }
 
 export default function InboxApp() {
+  const [selectedId, setSelectedId] = useState<string>("");
   const {
     conversations,
     setConversations,
     loading,
     error,
     refetch,
+    markConversationRead,
     urgentHandoffBannerVisible,
     dismissUrgentHandoffBanner,
     realtimeUiStatus,
     realtimeErrorDetail,
-  } = useConversations();
-  const [selectedId, setSelectedId] = useState<string>("");
+  } = useConversations({ activeConversationId: selectedId });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [propertyFilter, setPropertyFilter] = useState<string>("all");
@@ -587,10 +588,11 @@ export default function InboxApp() {
   }, [selected?.messages.length, scrollToBottom]);
 
   useEffect(() => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === selectedId && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c))
-    );
-  }, [selectedId, setConversations]);
+    if (!selectedId) return;
+    const current = conversations.find((c) => c.id === selectedId);
+    if (!current || current.unreadCount <= 0) return;
+    void markConversationRead(selectedId);
+  }, [conversations, selectedId, markConversationRead]);
 
   const sendMessage = async () => {
     const text = draft.trim();
@@ -866,6 +868,7 @@ export default function InboxApp() {
   const openChat = (id: string) => {
     setSelectedId(id);
     setMobileTab("chat");
+    void markConversationRead(id);
   };
 
   const filterTabs: { id: StatusFilter; label: string; count: number }[] = [
@@ -1096,7 +1099,12 @@ export default function InboxApp() {
                 const active = c.id === selectedId;
                 const op = operationalConfig[c.operationalStatus];
                 const hasUnread = c.unreadCount > 0;
+                const unreadLabel = c.unreadCount > 99 ? "99+" : String(c.unreadCount);
                 const isPending = c.request === "pending";
+                const propertyLabel = c.guest.property.split("—")[0]?.trim();
+                const showProperty =
+                  propertyLabel &&
+                  !["sin propiedad indicada", "true", "false"].includes(propertyLabel.toLowerCase());
                 const baseClasses = active
                   ? "z-[1] bg-white shadow-[inset_3px_0_0_0_#c8a97e] ring-1 ring-inset ring-[#e7dfd4]"
                   : `hover:bg-white/70 ${op.listTint} border-l-2 border-l-transparent hover:border-l-[#e7dfd4]`;
@@ -1112,7 +1120,7 @@ export default function InboxApp() {
                     key={c.id}
                     type="button"
                     onClick={() => openChat(c.id)}
-                    className={`group relative flex w-full gap-3.5 border-b border-[#ebe5dc] px-4 py-4 text-left transition ${baseClasses} ${pendingClasses}`}
+                    className={`group relative flex w-full items-start gap-3.5 border-b border-[#ebe5dc] px-4 py-3.5 text-left transition ${baseClasses} ${pendingClasses}`}
                   >
                     <div className="relative shrink-0 pt-0.5">
                       <Avatar name={c.guest.name} seed={c.guest.id} size="md" />
@@ -1125,25 +1133,17 @@ export default function InboxApp() {
                           <span className="h-[6px] w-[6px] rounded-full bg-white" aria-hidden />
                         </span>
                       )}
-                      {!isPending && hasUnread && (
-                        <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#c8a97e] px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-white">
-                          {c.unreadCount > 9 ? "9+" : c.unreadCount}
-                        </span>
-                      )}
                     </div>
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <span
-                          className={`truncate text-[15px] leading-tight ${hasUnread || isPending ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
-                        >
-                          {c.guest.name}
-                        </span>
-                        <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-[#9c968c]">{c.lastMessageAt}</span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-[#6b665e] group-hover:text-[#4a4742]">
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`block truncate text-[15px] leading-tight ${hasUnread || isPending ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
+                      >
+                        {c.guest.name}
+                      </span>
+                      <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-[#6b665e] group-hover:text-[#4a4742]">
                         {c.lastMessagePreview}
                       </p>
-                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         {isPending && (
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm ring-1 ring-rose-700/40">
                             <span className="h-1.5 w-1.5 rounded-full bg-white" aria-hidden />
@@ -1167,10 +1167,24 @@ export default function InboxApp() {
                             {c.controlMode === "ai" ? "Modo IA" : "Humano"}
                           </span>
                         )}
-                        <span className="truncate text-[11px] text-[#9c968c]" title={c.guest.property}>
-                          {c.guest.property.split("—")[0]?.trim()}
-                        </span>
+                        {showProperty && (
+                          <span className="truncate text-[11px] text-[#9c968c]" title={propertyLabel}>
+                            {propertyLabel}
+                          </span>
+                        )}
                       </div>
+                    </div>
+                    <div className="ml-2 flex min-w-[44px] shrink-0 flex-col items-end gap-1 pr-1">
+                      <span className="pt-0.5 text-[11px] tabular-nums text-[#9c968c]">{c.lastMessageAt}</span>
+                      {hasUnread && (
+                        <span
+                          className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm ring-2 ring-white"
+                          aria-label={`${c.unreadCount} mensajes sin leer`}
+                          title={`${c.unreadCount} mensajes sin leer`}
+                        >
+                          {unreadLabel}
+                        </span>
+                      )}
                     </div>
                   </button>
                 );

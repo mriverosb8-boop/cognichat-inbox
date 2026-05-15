@@ -21,7 +21,11 @@ export type RefetchOptions = {
   silent?: boolean;
 };
 
-export function useConversations() {
+export type UseConversationsOptions = {
+  activeConversationId?: string;
+};
+
+export function useConversations(options?: UseConversationsOptions) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +76,29 @@ export function useConversations() {
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  const markConversationRead = useCallback(async (conversationId: string) => {
+    const id = conversationId.trim();
+    if (!id) return;
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id && c.unreadCount > 0 ? { ...c, unreadCount: 0 } : c))
+    );
+
+    try {
+      const res = await fetch("/api/inbox", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: id, action: "mark_read" }),
+      });
+      if (!res.ok) {
+        throw new Error(`mark_read ${res.status}`);
+      }
+    } catch (e) {
+      console.warn("[useConversations] No se pudo marcar como leída", e);
+      void loadRef.current({ silent: true });
+    }
+  }, []);
+
   // Reconciliación puntual: refetch silencioso cuando la pestaña vuelve al foco,
   // útil si el socket de Realtime estuvo en background o el tab estuvo dormido.
   useEffect(() => {
@@ -99,6 +126,7 @@ export function useConversations() {
   // disparamos un refetch silencioso para reconciliar.
   useInboxRealtime({
     setConversations,
+    activeConversationId: options?.activeConversationId,
     onMissingContext: () => {
       void loadRef.current({ silent: true });
     },
@@ -114,6 +142,7 @@ export function useConversations() {
     loading,
     error,
     refetch: load,
+    markConversationRead,
     urgentHandoffBannerVisible,
     dismissUrgentHandoffBanner,
     realtimeUiStatus,

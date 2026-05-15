@@ -35,6 +35,7 @@ export type RealtimeUiStatus = "waiting" | "connected" | "error";
 
 export type UseInboxRealtimeOptions = {
   setConversations: SetConversations;
+  activeConversationId?: string;
   /**
    * Se llama cuando llega un evento para el que no tenemos contexto local
    * (p. ej. INSERT en `conversations`, o mensaje de un teléfono desconocido).
@@ -134,26 +135,41 @@ function playUrgentHandoffBeep(): void {
  */
 export function useInboxRealtime({
   setConversations,
+  activeConversationId,
   onMissingContext,
   onUrgentHandoffBanner,
   onRealtimeConnection,
 }: UseInboxRealtimeOptions) {
   const setConversationsRef = useRef(setConversations);
-  setConversationsRef.current = setConversations;
-
+  const activeConversationIdRef = useRef(activeConversationId);
   const onMissingRef = useRef(onMissingContext);
-  onMissingRef.current = onMissingContext;
-
   const onUrgentBannerRef = useRef(onUrgentHandoffBanner);
-  onUrgentBannerRef.current = onUrgentHandoffBanner;
-
   const onConnRef = useRef(onRealtimeConnection);
-  onConnRef.current = onRealtimeConnection;
 
   /** Último aviso urgente por clave de conversación / caso. */
   const urgentNotifiedAtRef = useRef<Map<string, number>>(new Map());
   /** Una notificación de escritorio activa por `urgentKey` (cierra la anterior al reemplazar). */
   const activeDesktopNotificationsRef = useRef<Map<string, Notification>>(new Map());
+
+  useEffect(() => {
+    setConversationsRef.current = setConversations;
+  }, [setConversations]);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    onMissingRef.current = onMissingContext;
+  }, [onMissingContext]);
+
+  useEffect(() => {
+    onUrgentBannerRef.current = onUrgentHandoffBanner;
+  }, [onUrgentHandoffBanner]);
+
+  useEffect(() => {
+    onConnRef.current = onRealtimeConnection;
+  }, [onRealtimeConnection]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof Notification === "undefined") return;
@@ -178,6 +194,7 @@ export function useInboxRealtime({
 
     let supabase: ReturnType<typeof createClient> | null = null;
     let channel: RealtimeChannel | null = null;
+    const activeDesktopNotifications = activeDesktopNotificationsRef.current;
 
     try {
       supabase = createClient();
@@ -364,6 +381,13 @@ export function useInboxRealtime({
           const shouldBumpPreview =
             new Date(built.createdAtIso).getTime() >=
             new Date(c.lastActivityIso).getTime();
+          const isActiveConversation = c.id === activeConversationIdRef.current;
+          const nextUnreadCount =
+            built.message.sender === "user"
+              ? isActiveConversation || c.operationalStatus === "closed"
+                ? 0
+                : c.unreadCount + 1
+              : 0;
           return {
             ...c,
             ...urgentVisualPatch,
@@ -373,6 +397,7 @@ export function useInboxRealtime({
               : c.lastMessagePreview,
             lastMessageAt: shouldBumpPreview ? built.lastMessageLabel : c.lastMessageAt,
             lastActivityIso: shouldBumpPreview ? built.createdAtIso : c.lastActivityIso,
+            unreadCount: nextUnreadCount,
           };
         });
         return sortByActivity(updated);
@@ -517,14 +542,14 @@ export function useInboxRealtime({
       });
 
     return () => {
-      for (const n of activeDesktopNotificationsRef.current.values()) {
+      for (const n of activeDesktopNotifications.values()) {
         try {
           n.close();
         } catch {
           /* ignore */
         }
       }
-      activeDesktopNotificationsRef.current.clear();
+      activeDesktopNotifications.clear();
 
       if (channel && supabase) {
         try {

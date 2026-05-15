@@ -409,6 +409,12 @@ function readBoolCol(v: boolean | null | undefined, defaultVal: boolean): boolea
   return v;
 }
 
+function readUnreadCount(v: number | string | null | undefined): number {
+  const n = typeof v === "number" ? v : Number(v ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
 /**
  * Estado operativo y modo control a partir de la tabla `conversations`.
  */
@@ -540,7 +546,7 @@ export function mergeConversationsTableWithMessages(
       lastMessagePreview: lastPreview.length > 120 ? `${lastPreview.slice(0, 117)}…` : lastPreview,
       lastMessageAt: lastAt,
       lastActivityIso,
-      unreadCount: 0,
+      unreadCount: readUnreadCount(cr.unread_count),
       operationalStatus,
       controlMode,
       channelLabel: "WhatsApp",
@@ -666,6 +672,7 @@ export function applyConversationRowPatch(
     blocked: row.blocked ?? false,
     blockedAt: row.blocked_at,
     request: requestValue,
+    unreadCount: readUnreadCount(row.unread_count),
     operationalStatus,
     controlMode,
   };

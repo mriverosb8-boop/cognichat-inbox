@@ -17,6 +17,8 @@ export type ConversationDbRow = {
    * - null / otro valor: caso sin pendiente activo
    */
   request: string | null;
+  unread_count: number | null;
+  last_read_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -26,4 +28,5 @@ export type InboxPatchAction =
   | "reactivate_ai"
   | "completed"
   | "resolve_request"
-  | "reopen";
+  | "reopen"
+  | "mark_read";
