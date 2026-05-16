@@ -19,6 +19,27 @@ type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "clo
 
 /** Ventana de conversación (WhatsApp / Meta) desde el último mensaje con `sender: "user"`. */
 const META_INBOX_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PDF_MIME_TYPE = "application/pdf";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+function isPdfFile(file: File | null): boolean {
+  return file?.type === PDF_MIME_TYPE;
+}
+
+function isMessageDocument(message: Message): boolean {
+  return (
+    message.messageType?.trim().toLowerCase() === "document" ||
+    message.mediaMimeType?.trim().toLowerCase() === PDF_MIME_TYPE
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+}
 
 function sortConversationsByActivity(list: Conversation[]): Conversation[] {
   return [...list].sort((a, b) => {
@@ -106,6 +127,18 @@ function IconSend(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
       <path d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0022.445-8.662a.75.75 0 000-1.5A60.517 60.517 0 003.478 2.404z" />
+    </svg>
+  );
+}
+
+function IconImage(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
+      />
     </svg>
   );
 }
@@ -363,6 +396,102 @@ function PrivateWhatsAppImage({
   );
 }
 
+function PrivateWhatsAppDocument({
+  message,
+}: {
+  message: Message;
+}) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(message.mediaUrl ?? null);
+  const [status, setStatus] = useState<"idle" | "loading" | "error">(
+    message.mediaUrl ? "idle" : "loading"
+  );
+
+  useEffect(() => {
+    if (message.mediaUrl) {
+      setSignedUrl(message.mediaUrl);
+      setStatus("idle");
+      return;
+    }
+
+    if (!message.mediaStoragePath) {
+      setSignedUrl(null);
+      setStatus("error");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadSignedUrl() {
+      setSignedUrl(null);
+      setStatus("loading");
+
+      try {
+        const params = new URLSearchParams();
+        params.set("path", message.mediaStoragePath!);
+        if (message.mediaBucket) params.set("bucket", message.mediaBucket);
+
+        const response = await fetch(`/api/media/signed-url?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`signed-url ${response.status}`);
+        }
+
+        const payload = (await response.json()) as { signedUrl?: string };
+        if (!payload.signedUrl) {
+          throw new Error("signed-url vacío");
+        }
+
+        setSignedUrl(payload.signedUrl);
+        setStatus("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSignedUrl(null);
+        setStatus("error");
+      }
+    }
+
+    void loadSignedUrl();
+
+    return () => {
+      controller.abort();
+    };
+  }, [message.mediaBucket, message.mediaStoragePath, message.mediaUrl]);
+
+  const filename = message.mediaFilename || "Documento.pdf";
+  const caption = message.body || message.mediaCaption || "";
+
+  return (
+    <div className="flex max-w-full flex-col gap-2">
+      <div className="flex max-w-full items-center gap-3 rounded-xl border border-[#e7dfd4] bg-white/70 p-2.5 shadow-sm ring-1 ring-black/[0.03]">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-bold text-rose-700">
+          PDF
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-[#1f1f1c]">{filename}</p>
+          <p className="mt-0.5 text-[11px] text-[#6b665e]">Documento PDF</p>
+        </div>
+        {signedUrl && status !== "error" ? (
+          <a
+            href={signedUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 rounded-lg border border-[#c5d4e0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#1f1f1c] shadow-sm transition hover:bg-[#f1ece4]"
+          >
+            Abrir PDF
+          </a>
+        ) : (
+          <span className="shrink-0 text-[11px] text-[#6b665e]">
+            {status === "loading" ? "Cargando..." : "No disponible"}
+          </span>
+        )}
+      </div>
+      {caption ? <p className="whitespace-pre-wrap break-words">{caption}</p> : null}
+    </div>
+  );
+}
+
 function MessageBubble({
   m,
   guestName,
@@ -395,6 +524,7 @@ function MessageBubble({
   const isTranscribedVoice =
     isUser && typeof m.format === "string" && m.format.trim().toLowerCase() === "audio";
   const hasImageSource = Boolean(m.mediaUrl || m.mediaStoragePath);
+  const isDocument = isMessageDocument(m);
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -429,7 +559,9 @@ function MessageBubble({
               </span>
             </p>
           )}
-          {m.messageType === "image" && hasImageSource ? (
+          {isDocument ? (
+            <PrivateWhatsAppDocument message={m} />
+          ) : m.messageType === "image" && hasImageSource ? (
             <div className="flex max-w-full flex-col gap-2">
               <PrivateWhatsAppImage message={m} />
               {m.body ? <p className="mt-2 whitespace-pre-wrap break-words">{m.body}</p> : null}
@@ -474,6 +606,10 @@ export default function InboxApp() {
   const [mobileTab, setMobileTab] = useState<"list" | "chat">("list");
   const [guestOpen, setGuestOpen] = useState(false);
   const [sendWarning, setSendWarning] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [sendingMedia, setSendingMedia] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resolvingRequest, setResolvingRequest] = useState(false);
   const [globalActionsOpen, setGlobalActionsOpen] = useState(false);
@@ -484,6 +620,7 @@ export default function InboxApp() {
   } | null>(null);
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const globalActionsRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setActionError(null);
@@ -510,6 +647,14 @@ export default function InboxApp() {
     const timeout = window.setTimeout(() => setTemplateToast(null), 3500);
     return () => window.clearTimeout(timeout);
   }, [templateToast]);
+
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl);
+      }
+    };
+  }, [filePreviewUrl]);
 
   useEffect(() => {
     if (conversations.length === 0) return;
@@ -594,12 +739,148 @@ export default function InboxApp() {
     void markConversationRead(selectedId);
   }, [conversations, selectedId, markConversationRead]);
 
+  const clearSelectedFile = useCallback(() => {
+    setSelectedFile(null);
+    setFilePreviewUrl(null);
+    setFileError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  useEffect(() => {
+    clearSelectedFile();
+  }, [selectedId, clearSelectedFile]);
+
+  const handleFileSelection = (file: File | null) => {
+    setFileError(null);
+    if (!file) return;
+
+    const isImage = ALLOWED_IMAGE_TYPES.has(file.type);
+    const isPdf = file.type === PDF_MIME_TYPE;
+    if (!isImage && !isPdf) {
+      setFileError("Solo puedes adjuntar imágenes JPG, PNG, WebP o PDF.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (isImage && file.size > MAX_IMAGE_BYTES) {
+      setFileError("La imagen no puede superar 5 MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (isPdf && file.size > MAX_PDF_BYTES) {
+      setFileError("El PDF no puede superar 10 MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setSelectedFile(file);
+    setFilePreviewUrl(isPdf ? null : URL.createObjectURL(file));
+  };
+
   const sendMessage = async () => {
     const text = draft.trim();
-    if (!text || !selectedId) return;
+    if ((!text && !selectedFile) || !selectedId || sendingMedia) return;
     const selectedConv = conversations.find((c) => c.id === selectedId);
     if (selectedConv?.operationalStatus === "closed") return;
     if (isReplyBlockedByMetaPolicy(selectedConv?.messages ?? [])) return;
+
+    if (selectedFile) {
+      const selectedFileIsPdf = isPdfFile(selectedFile);
+      setSendingMedia(true);
+      setSendWarning(null);
+      setFileError(null);
+      setActionError(null);
+
+      try {
+        const formData = new FormData();
+        formData.set("conversationId", selectedConv!.id);
+        formData.set("to", selectedConv!.guestPhone);
+        if (text) formData.set("caption", text);
+        formData.set("file", selectedFile);
+
+        const res = await fetch("/api/send-whatsapp-media", {
+          method: "POST",
+          body: formData,
+        });
+        const j = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: {
+            id?: string | number;
+            created_at?: string;
+            media_storage_path?: string | null;
+            media_bucket?: string | null;
+            media_mime_type?: string | null;
+            media_caption?: string | null;
+            media_filename?: string | null;
+            media_meta_id?: string | null;
+            meta_media_id?: string | null;
+            message_type?: string | null;
+          };
+          mediaStoragePath?: string;
+          mediaBucket?: string;
+          mediaFilename?: string;
+          whatsappType?: "image" | "document";
+        };
+
+        if (!res.ok) {
+          setFileError(j.error ?? "No se pudo enviar el archivo por WhatsApp.");
+          return;
+        }
+
+        const sentAtIso = j.message?.created_at ?? new Date().toISOString();
+        const messageType = j.message?.message_type ?? j.whatsappType ?? (selectedFileIsPdf ? "document" : "image");
+        const optimisticMediaMessage: Message = {
+          id: String(j.message?.id ?? `local-media-${Date.now()}`),
+          body: text,
+          sentAt: formatMessageDetailTime(sentAtIso),
+          sentAtIso,
+          sender: "agent",
+          messageType,
+          mediaUrl: selectedFileIsPdf ? null : filePreviewUrl,
+          mediaStoragePath: j.message?.media_storage_path ?? j.mediaStoragePath ?? null,
+          mediaBucket: j.message?.media_bucket ?? j.mediaBucket ?? null,
+          mediaMimeType: j.message?.media_mime_type ?? selectedFile.type,
+          mediaCaption: j.message?.media_caption ?? (text || null),
+          mediaFilename: j.message?.media_filename ?? j.mediaFilename ?? selectedFile.name,
+          metaMediaId: j.message?.media_meta_id ?? j.message?.meta_media_id ?? null,
+        };
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedId
+              ? {
+                  ...c,
+                  messages: c.messages.some((m) => m.id === optimisticMediaMessage.id)
+                    ? c.messages
+                    : [...c.messages, optimisticMediaMessage],
+                  lastMessagePreview: text || (selectedFileIsPdf ? `📄 ${selectedFile.name}` : "📷 Imagen"),
+                  lastMessageAt: optimisticMediaMessage.sentAt,
+                  lastActivityIso: sentAtIso,
+                  unreadCount: 0,
+                  controlMode: "human",
+                  needsHuman: true,
+                  aiActive: false,
+                  dbStatus: "human_control",
+                  operationalStatus:
+                    c.operationalStatus === "closed" ? "closed" : "requires_attention",
+                }
+              : c
+          )
+        );
+
+        setDraft("");
+        clearSelectedFile();
+        void refetch({ silent: true });
+      } catch {
+        setFileError("Error de red al enviar el archivo.");
+      } finally {
+        setSendingMedia(false);
+      }
+      return;
+    }
 
     const newMsg: Message = {
       id: `local-${Date.now()}`,
@@ -881,6 +1162,8 @@ export default function InboxApp() {
 
   const conversationClosed = selected?.operationalStatus === "closed";
   const inputDisabled = Boolean(conversationClosed || replyBlockedByMeta);
+  const selectedFileIsPdf = isPdfFile(selectedFile);
+  const selectedFileSizeLabel = selectedFile ? formatFileSize(selectedFile.size) : "";
 
   if (loading && conversations.length === 0) {
     return (
@@ -1282,9 +1565,69 @@ export default function InboxApp() {
                     {sendWarning}
                   </p>
                 )}
+                {fileError && (
+                  <p className="mb-3 w-full min-w-0 max-w-full break-words rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-900 [overflow-wrap:anywhere]">
+                    {fileError}
+                  </p>
+                )}
+                {selectedFile && (
+                  <div className="mb-3 flex max-w-full items-center gap-3 rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] p-2.5 shadow-sm ring-1 ring-black/[0.03]">
+                    {selectedFileIsPdf || !filePreviewUrl ? (
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-[11px] font-bold text-rose-700">
+                        PDF
+                      </div>
+                    ) : (
+                      <img
+                        src={filePreviewUrl}
+                        alt={`Vista previa de ${selectedFile.name}`}
+                        className="h-14 w-14 shrink-0 rounded-xl border border-black/10 object-cover"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-semibold text-[#1f1f1c]">
+                        {selectedFile.name}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[#6b665e]">
+                        {selectedFileIsPdf ? "PDF adjunto" : "Imagen adjunta"} · {selectedFileSizeLabel}
+                      </p>
+                      {draft.trim() && (
+                        <p className="mt-1 line-clamp-1 text-[12px] text-[#6b665e]">
+                          Caption: {draft.trim()}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearSelectedFile}
+                      disabled={sendingMedia}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#e7dfd4] bg-white text-[#6b665e] shadow-sm transition hover:bg-[#f1ece4] hover:text-[#1f1f1c] disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="Quitar archivo"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 <div
                   className={`flex w-full min-w-0 max-w-full items-end gap-2 sm:gap-3 ${inputDisabled ? "opacity-[0.55]" : ""} transition-opacity`}
                 >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    className="hidden"
+                    onChange={(e) => handleFileSelection(e.target.files?.[0] ?? null)}
+                    disabled={inputDisabled || sendingMedia}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={inputDisabled || sendingMedia}
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] text-[#6b665e] shadow-sm transition hover:border-[#c8a97e]/60 hover:bg-white hover:text-[#1f1f1c] disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="Adjuntar archivo"
+                    title="Adjuntar archivo"
+                  >
+                    <IconImage className="h-5 w-5" />
+                  </button>
                   <input
                     type="text"
                     enterKeyHint="send"
@@ -1295,27 +1638,38 @@ export default function InboxApp() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        sendMessage();
+                        void sendMessage();
                       }
                     }}
-                    disabled={inputDisabled}
+                    disabled={inputDisabled || sendingMedia}
                     placeholder={
                       conversationClosed
                         ? "Conversación completada"
                         : replyBlockedByMeta
                           ? "No puedes responder (política Meta / ventana 24 h)"
+                          : selectedFile
+                            ? selectedFileIsPdf
+                              ? "Caption opcional para el documento…"
+                              : "Caption opcional para la imagen…"
                           : "Responder como agente humano… (Enter para enviar)"
                     }
                     className="min-h-[3rem] min-w-0 flex-1 touch-manipulation rounded-2xl border border-[#e7dfd4] bg-[#f8f6f2] px-4 py-3 text-base leading-normal text-[#1f1f1c] shadow-sm placeholder:text-[#9c968c] transition focus:border-[#c8a97e] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20 disabled:cursor-not-allowed lg:px-5 lg:text-[14px] lg:leading-snug"
                   />
                   <button
                     type="button"
-                    onClick={sendMessage}
-                    disabled={!draft.trim() || inputDisabled}
+                    onClick={() => void sendMessage()}
+                    disabled={(!draft.trim() && !selectedFile) || inputDisabled || sendingMedia}
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8a9eae] to-[#6b7d8f] text-white shadow-md shadow-[#6b7d8f]/25 ring-1 ring-[#c5d4e0] transition hover:from-[#7d8fa0] hover:to-[#5f6f80] disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Enviar"
                   >
-                    <IconSend className="h-5 w-5" />
+                    {sendingMedia ? (
+                      <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <IconSend className="h-5 w-5" />
+                    )}
                   </button>
                 </div>
                 {replyBlockedByMeta && (

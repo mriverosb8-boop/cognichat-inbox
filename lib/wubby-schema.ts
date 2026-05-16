@@ -16,6 +16,7 @@ export type WubbyWhatsappRow = {
   media_storage_path?: string | null;
   media_mime_type?: string | null;
   media_caption?: string | null;
+  media_filename?: string | null;
   media_meta_id?: string | null;
   media_bucket?: string | null;
   meta_media_id?: string | null;

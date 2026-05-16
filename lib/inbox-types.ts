@@ -54,6 +54,7 @@ export interface Message {
   mediaStoragePath?: string | null;
   mediaMimeType?: string | null;
   mediaCaption?: string | null;
+  mediaFilename?: string | null;
   mediaBucket?: string | null;
   metaMediaId?: string | null;
   /**

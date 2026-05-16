@@ -187,6 +187,19 @@ function readMediaCaption(row: WubbyWhatsappRow): string | undefined {
   return readStringField(row, "media_caption", "mediaCaption", "caption");
 }
 
+function readMediaFilename(row: WubbyWhatsappRow): string | undefined {
+  return readStringField(
+    row,
+    "media_filename",
+    "mediaFilename",
+    "filename",
+    "file_name",
+    "fileName",
+    "document_filename",
+    "documentFilename"
+  );
+}
+
 function readMediaBucket(row: WubbyWhatsappRow): string | undefined {
   return readStringField(row, "media_bucket", "mediaBucket", "bucket");
 }
@@ -210,6 +223,7 @@ function readMessageMedia(row: WubbyWhatsappRow): {
   mediaStoragePath: string | null;
   mediaMimeType: string | null;
   mediaCaption: string | null;
+  mediaFilename: string | null;
   mediaBucket: string | null;
   metaMediaId: string | null;
 } {
@@ -219,20 +233,25 @@ function readMessageMedia(row: WubbyWhatsappRow): {
   const mediaStoragePath = readMediaStoragePath(row) ?? null;
   const mediaMimeType = readMediaMimeType(row) ?? null;
   const mediaCaption = readMediaCaption(row) ?? null;
+  const mediaFilename = readMediaFilename(row) ?? null;
   const mediaBucket = readMediaBucket(row) ?? null;
   const metaMediaId = readMetaMediaId(row) ?? null;
   const normalizedType = declaredType?.trim().toLowerCase();
   const normalizedMime = mediaMimeType?.trim().toLowerCase();
   const isImageByMime = normalizedMime?.startsWith("image/") ?? false;
   const isImageByType = normalizedType === "image";
+  const isDocumentByMime = normalizedMime === "application/pdf";
+  const isDocumentByType = normalizedType === "document" || normalizedType === "file";
   const isImageByUrl = mediaUrl ? mediaUrlLooksLikeImage(mediaUrl) : false;
 
   const messageType =
-    isImageByType || isImageByMime || Boolean(mediaStoragePath) || isImageByUrl
+    isDocumentByType || isDocumentByMime
+      ? "document"
+      : isImageByType || isImageByMime || Boolean(mediaStoragePath) || isImageByUrl
       ? "image"
       : declaredType ?? "text";
 
-  return { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaBucket, metaMediaId };
+  return { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaFilename, mediaBucket, metaMediaId };
 }
 
 /** Columna `cause_request` (`yes` = disparó handoff a humano). */
@@ -584,11 +603,12 @@ export function buildMessageFromWubbyRow(
 
   const messageRaw = String(row.message ?? "").trim();
   const fmt = readMessageFormat(row);
-  const { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaBucket, metaMediaId } =
+  const { messageType, mediaUrl, mediaStoragePath, mediaMimeType, mediaCaption, mediaFilename, mediaBucket, metaMediaId } =
     readMessageMedia(row);
   const isImage = messageType.trim().toLowerCase() === "image";
-  const body = messageRaw || mediaCaption || (isImage ? "" : "(vacío)");
-  const previewRaw = body || (isImage ? "📷 Imagen" : "—");
+  const isDocument = messageType.trim().toLowerCase() === "document";
+  const body = messageRaw || mediaCaption || (isImage || isDocument ? "" : "(vacío)");
+  const previewRaw = body || (isDocument ? `📄 ${mediaFilename ?? "Documento"}` : isImage ? "📷 Imagen" : "—");
   const causeReqHandoff = readCauseRequest(row);
   const causeOfReq = readCauseOfRequestColumn(row);
 
@@ -605,6 +625,7 @@ export function buildMessageFromWubbyRow(
       mediaStoragePath,
       mediaMimeType,
       mediaCaption,
+      mediaFilename,
       mediaBucket,
       metaMediaId,
       ...(causeReqHandoff ? { causeRequest: causeReqHandoff } : {}),
