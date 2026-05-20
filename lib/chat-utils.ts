@@ -1,5 +1,6 @@
 import type { ConversationDbRow } from "@/lib/conversation-schema";
 import type { ControlMode, Conversation, Message, MessageSender, OperationalStatus } from "@/lib/inbox-types";
+import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 
 /**
@@ -483,7 +484,7 @@ function emptyReservation() {
 export function mergeConversationsTableWithMessages(
   convRows: ConversationDbRow[],
   msgRows: WubbyWhatsappRow[],
-  options: { twilioEnv?: string | null }
+  options: { twilioEnv?: string | null; messageLimit?: number }
 ): Conversation[] {
   if (convRows.length === 0) return [];
 
@@ -500,7 +501,8 @@ export function mergeConversationsTableWithMessages(
     if (!g || g === "unknown") continue;
     const list = messagesByPhone.get(g) ?? [];
     list.push(row);
-    messagesByPhone.set(g, list);
+    const messageLimit = options.messageLimit ?? MESSAGES_LIMIT;
+    messagesByPhone.set(g, list.slice(-messageLimit));
   }
 
   const out: Conversation[] = [];

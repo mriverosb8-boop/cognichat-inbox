@@ -7,11 +7,13 @@ import {
   formatMessageDetailTime,
   messageNeedsHumanAlert,
 } from "@/lib/chat-utils";
+import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
 import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { useConversations } from "@/hooks/useConversations";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { BrandHeaderMark } from "./BrandHeaderMark";
+import { InboxHeaderTabs } from "./InboxHeaderTabs";
 import { LogoutButton } from "./LogoutButton";
 import { StartConversationModal } from "./StartConversationModal";
 
@@ -587,6 +589,7 @@ function MessageBubble({
 
 export default function InboxApp() {
   const [selectedId, setSelectedId] = useState<string>("");
+  const [requestedConversationId, setRequestedConversationId] = useState<string | null>(null);
   const {
     conversations,
     setConversations,
@@ -621,6 +624,12 @@ export default function InboxApp() {
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const globalActionsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const conversationId = new URLSearchParams(window.location.search).get("conversationId")?.trim();
+    if (conversationId) setRequestedConversationId(conversationId);
+  }, []);
 
   useEffect(() => {
     setActionError(null);
@@ -659,10 +668,13 @@ export default function InboxApp() {
   useEffect(() => {
     if (conversations.length === 0) return;
     setSelectedId((id) => {
+      if (requestedConversationId && conversations.some((c) => c.id === requestedConversationId)) {
+        return requestedConversationId;
+      }
       if (id && conversations.some((c) => c.id === id)) return id;
       return conversations[0]!.id;
     });
-  }, [conversations]);
+  }, [conversations, requestedConversationId]);
 
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -855,7 +867,7 @@ export default function InboxApp() {
                   ...c,
                   messages: c.messages.some((m) => m.id === optimisticMediaMessage.id)
                     ? c.messages
-                    : [...c.messages, optimisticMediaMessage],
+                    : [...c.messages, optimisticMediaMessage].slice(-MESSAGES_LIMIT),
                   lastMessagePreview: text || (selectedFileIsPdf ? `📄 ${selectedFile.name}` : "📷 Imagen"),
                   lastMessageAt: optimisticMediaMessage.sentAt,
                   lastActivityIso: sentAtIso,
@@ -894,7 +906,7 @@ export default function InboxApp() {
         c.id === selectedId
           ? {
               ...c,
-              messages: [...c.messages, newMsg],
+              messages: [...c.messages, newMsg].slice(-MESSAGES_LIMIT),
               lastMessagePreview: text.length > 80 ? `${text.slice(0, 77)}…` : text,
               lastMessageAt: newMsg.sentAt,
               lastActivityIso: new Date().toISOString(),
@@ -1212,6 +1224,7 @@ export default function InboxApp() {
             <h1 className="truncate text-[15px] font-semibold tracking-tight text-[#1f1f1c]">FerrarIA Inbox</h1>
             <p className="truncate text-[11px] leading-tight text-[#6b665e]">Recepción · IA + agente humano</p>
           </div>
+          <InboxHeaderTabs />
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span

@@ -11,6 +11,7 @@ import {
   CONVERSATIONS_TABLE,
   type ConversationDbRow,
 } from "@/lib/conversation-schema";
+import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import { WUBBY_TABLE, type WubbyWhatsappRow } from "@/lib/wubby-schema";
 import type { Conversation } from "@/lib/inbox-types";
 import {
@@ -391,7 +392,7 @@ export function useInboxRealtime({
           return {
             ...c,
             ...urgentVisualPatch,
-            messages: [...c.messages, built.message],
+            messages: [...c.messages, built.message].slice(-MESSAGES_LIMIT),
             lastMessagePreview: shouldBumpPreview
               ? truncatePreview(built.previewRaw)
               : c.lastMessagePreview,

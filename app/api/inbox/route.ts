@@ -10,10 +10,9 @@ import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { requireSessionUser } from "@/lib/auth/require-user";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { MESSAGE_FETCH_LIMIT, MESSAGES_LIMIT } from "@/lib/message-limits";
 
 export const dynamic = "force-dynamic";
-
-const MESSAGE_FETCH_LIMIT = 8000;
 
 export async function GET() {
   try {
@@ -27,7 +26,7 @@ export async function GET() {
       supabase
         .from(WUBBY_TABLE)
         .select("*")
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(MESSAGE_FETCH_LIMIT),
     ]);
 
@@ -41,10 +40,11 @@ export async function GET() {
     }
 
     const convRows = (convResult.data ?? []) as ConversationDbRow[];
-    const msgRows = (msgResult.data ?? []) as WubbyWhatsappRow[];
+    const msgRows = ((msgResult.data ?? []) as WubbyWhatsappRow[]).reverse();
 
     const conversations = mergeConversationsTableWithMessages(convRows, msgRows, {
       twilioEnv: process.env.TWILIO_WHATSAPP_ADDRESS,
+      messageLimit: MESSAGES_LIMIT,
     });
     conversations.sort((a, b) => {
       return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
@@ -54,6 +54,7 @@ export async function GET() {
       conversations,
       fetchedConversations: convRows.length,
       fetchedMessages: msgRows.length,
+      messageLimit: MESSAGES_LIMIT,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error desconocido";
