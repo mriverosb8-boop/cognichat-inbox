@@ -1,4 +1,4 @@
-import type { Reserva } from "./types";
+import type { Reserva, ReservaQuoteRequest } from "./types";
 
 const COP_FORMATTER = new Intl.NumberFormat("es-CO", {
   style: "currency",
@@ -103,9 +103,52 @@ export function getSubtotalSinIva(breakdown: Record<string, unknown> | null): nu
   return null;
 }
 
+function readMoneyValue(value: unknown): number | null {
+  const amount = typeof value === "number" ? value : Number(value ?? NaN);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function readBreakdownMoney(breakdown: Record<string, unknown> | null | undefined, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = readMoneyValue(breakdown?.[key]);
+    if (value != null) return value;
+  }
+  return null;
+}
+
+export function getQuoteTaxAmounts(quote: ReservaQuoteRequest | null | undefined): {
+  subtotalBeforeIva: number | null;
+  ivaAmount: number | null;
+  totalAmount: number | null;
+} {
+  const breakdown = quote?.breakdown_json ?? null;
+  const totalAmount =
+    readMoneyValue(quote?.total_amount) ??
+    readBreakdownMoney(breakdown, ["total_amount", "total", "total_con_iva"]);
+  let subtotalBeforeIva =
+    readMoneyValue(quote?.subtotal_before_iva) ??
+    readBreakdownMoney(breakdown, ["subtotal_before_iva", "subtotal", "subtotal_sin_iva", "subtotal_without_tax", "total_sin_iva", "base"]);
+  let ivaAmount =
+    readMoneyValue(quote?.iva_amount) ??
+    readBreakdownMoney(breakdown, ["iva_amount", "iva", "tax", "tax_amount"]);
+
+  if (subtotalBeforeIva == null && totalAmount != null && ivaAmount != null) {
+    subtotalBeforeIva = totalAmount - ivaAmount;
+  }
+  if (ivaAmount == null && totalAmount != null && subtotalBeforeIva != null) {
+    ivaAmount = totalAmount - subtotalBeforeIva;
+  }
+  if (subtotalBeforeIva == null && totalAmount != null) {
+    subtotalBeforeIva = totalAmount / 1.19;
+    ivaAmount = totalAmount - subtotalBeforeIva;
+  }
+
+  return { subtotalBeforeIva, ivaAmount, totalAmount };
+}
+
 export function buildOperaClipboardText(reserva: Reserva): string {
   const quote = reserva.quote_requests;
-  const subtotalSinIva = getSubtotalSinIva(quote?.breakdown_json ?? null);
+  const { subtotalBeforeIva, ivaAmount, totalAmount } = getQuoteTaxAmounts(quote);
   return [
     `Reserva ${formatCOT(reserva.quote_request_id)}`,
     `Titular: ${reserva.titular_nombre ?? "—"}`,
@@ -122,7 +165,8 @@ export function buildOperaClipboardText(reserva: Reserva): string {
     `Niños: ${quote?.children ?? 0}`,
     `Mascotas: ${formatSiNo(quote?.pets)}`,
     `Desayuno: ${formatSiNo(quote?.breakfast_included)}`,
-    ...(subtotalSinIva == null ? [] : [`Total sin IVA: ${formatTotal(subtotalSinIva)}`]),
-    `Total: ${formatTotal(quote?.total_amount)} COP`,
+    ...(subtotalBeforeIva == null ? [] : [`Subtotal sin IVA: ${formatTotal(subtotalBeforeIva)}`]),
+    ...(ivaAmount == null ? [] : [`IVA 19%: ${formatTotal(ivaAmount)}`]),
+    `Total con IVA: ${formatTotal(totalAmount)} COP`,
   ].join("\n");
 }

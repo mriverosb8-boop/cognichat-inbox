@@ -9,7 +9,7 @@ import {
   formatSiNo,
   formatTiempoRelativo,
   formatTotal,
-  getSubtotalSinIva,
+  getQuoteTaxAmounts,
 } from "../lib/formatters";
 import type { Reserva } from "../lib/types";
 
@@ -40,7 +40,7 @@ export function ReservaCard({
   const cot = formatCOT(reserva.quote_request_id);
   const roomLabel = `${quote?.num_rooms ?? 0}x ${abreviarHabitacion(quote?.room_type_requested)}`;
   const fullRoomLabel = `${quote?.num_rooms ?? 0} x ${formatRoomType(quote?.room_type_requested)}`;
-  const subtotalSinIva = getSubtotalSinIva(quote?.breakdown_json ?? null);
+  const { subtotalBeforeIva, ivaAmount, totalAmount } = getQuoteTaxAmounts(quote);
   const notes = reserva.notas?.trim() || "Sin notas";
 
   return (
@@ -85,7 +85,7 @@ export function ReservaCard({
         </div>
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#9c968c]">Total</dt>
-          <dd className="mt-1 font-semibold tabular-nums text-[#1f1f1c]">{formatTotal(quote?.total_amount)}</dd>
+          <dd className="mt-1 font-semibold tabular-nums text-[#1f1f1c]">{formatTotal(totalAmount)}</dd>
         </div>
       </dl>
 
@@ -111,10 +111,9 @@ export function ReservaCard({
             <p><span className="font-semibold text-[#6b665e]">Niños:</span> {quote?.children ?? 0}</p>
             <p><span className="font-semibold text-[#6b665e]">Mascotas:</span> {formatSiNo(quote?.pets)}</p>
             <p><span className="font-semibold text-[#6b665e]">Desayuno:</span> {formatSiNo(quote?.breakfast_included)}</p>
-            {subtotalSinIva == null ? null : (
-              <p><span className="font-semibold text-[#6b665e]">Total sin IVA:</span> {formatTotal(subtotalSinIva)}</p>
-            )}
-            <p><span className="font-semibold text-[#6b665e]">Total:</span> {formatTotal(quote?.total_amount)}</p>
+            <p><span className="font-semibold text-[#6b665e]">Subtotal sin IVA:</span> {formatTotal(subtotalBeforeIva)}</p>
+            <p><span className="font-semibold text-[#6b665e]">IVA 19%:</span> {formatTotal(ivaAmount)}</p>
+            <p><span className="font-semibold text-[#6b665e]">Total con IVA:</span> {formatTotal(totalAmount)}</p>
           </div>
         </section>
       </div>

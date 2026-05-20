@@ -17,6 +17,8 @@ export type ReservaQuoteRequest = {
   children: number | null;
   pets: boolean | null;
   breakfast_included: boolean | null;
+  subtotal_before_iva: number | string | null;
+  iva_amount: number | string | null;
   total_amount: number | string | null;
   breakdown_json: Record<string, unknown> | null;
   conversation_id: string | null;
