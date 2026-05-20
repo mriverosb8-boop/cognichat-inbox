@@ -1,6 +1,6 @@
 /** Bandeja: GET fusiona `conversations` + mensajes `Wubby_Whatsapp`; PATCH actualiza solo `conversations`. */
 import { NextResponse } from "next/server";
-import { mergeConversationsTableWithMessages } from "@/lib/chat-utils";
+import { getConversationDisplayActivityMs, mergeConversationsTableWithMessages } from "@/lib/chat-utils";
 import {
   CONVERSATIONS_TABLE,
   type ConversationDbRow,
@@ -47,7 +47,7 @@ export async function GET() {
       messageLimit: MESSAGES_LIMIT,
     });
     conversations.sort((a, b) => {
-      return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+      return getConversationDisplayActivityMs(b) - getConversationDisplayActivityMs(a);
     });
 
     return NextResponse.json({

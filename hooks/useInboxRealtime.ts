@@ -18,6 +18,8 @@ import {
   applyConversationRowPatch,
   buildMessageFromWubbyRow,
   findConversationForWubbyRow,
+  getConversationDisplayActivityMs,
+  getMessageDisplayMs,
   messageNeedsHumanAlert,
   normalizeWaIdentity,
   resolveHotelWaIdentitiesSet,
@@ -52,8 +54,8 @@ export type UseInboxRealtimeOptions = {
 /** Reordena la lista por `lastActivityIso` descendente. */
 function sortByActivity(list: Conversation[]): Conversation[] {
   return [...list].sort((a, b) => {
-    const ta = new Date(a.lastActivityIso).getTime();
-    const tb = new Date(b.lastActivityIso).getTime();
+    const ta = getConversationDisplayActivityMs(a);
+    const tb = getConversationDisplayActivityMs(b);
     return tb - ta;
   });
 }
@@ -380,8 +382,8 @@ export function useInboxRealtime({
         const updated = prev.map((c) => {
           if (c.id !== target.id) return c;
           const shouldBumpPreview =
-            new Date(built.createdAtIso).getTime() >=
-            new Date(c.lastActivityIso).getTime();
+            getMessageDisplayMs(built.message as unknown as Record<string, unknown>) >=
+            getConversationDisplayActivityMs(c);
           const isActiveConversation = c.id === activeConversationIdRef.current;
           const nextUnreadCount =
             built.message.sender === "user"

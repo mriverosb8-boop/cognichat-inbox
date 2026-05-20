@@ -418,6 +418,99 @@ export function formatMessageDetailTime(iso: string, locale = "es"): string {
   }).format(d);
 }
 
+export function isMediaMessage(message: Record<string, unknown>): boolean {
+  const type = String(
+    message.whatsapp_type ??
+      message.message_type ??
+      message.messageType ??
+      message.type ??
+      message.media_type ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return (
+    type === "image" ||
+    type === "document" ||
+    type === "pdf" ||
+    Boolean(message.media_url) ||
+    Boolean(message.mediaUrl) ||
+    Boolean(message.media_storage_path) ||
+    Boolean(message.mediaStoragePath) ||
+    Boolean(message.media_type) ||
+    Boolean(message.media_mime_type) ||
+    Boolean(message.mediaMimeType) ||
+    Boolean(message.media_filename) ||
+    Boolean(message.mediaFilename)
+  );
+}
+
+export function getMessageDisplayDate(message: Record<string, unknown>): Date {
+  const raw =
+    message.created_at ??
+    message.createdAt ??
+    message.sentAtIso;
+  const date = new Date(String(raw ?? ""));
+
+  if (Number.isNaN(date.getTime())) {
+    return new Date(0);
+  }
+
+  if (isMediaMessage(message)) {
+    return new Date(date.getTime() - 5 * 60 * 60 * 1000);
+  }
+
+  return date;
+}
+
+export function getMessageDisplayMs(message: Record<string, unknown>): number {
+  return getMessageDisplayDate(message).getTime();
+}
+
+export function formatMessageDisplayTime(message: Record<string, unknown>, locale = "es-CO"): string {
+  const date = getMessageDisplayDate(message);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+export function formatMessageDisplayListTime(message: Record<string, unknown>, locale = "es"): string {
+  const d = getMessageDisplayDate(message);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) {
+    return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(d);
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate()
+  ) {
+    return "Ayer";
+  }
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(d);
+}
+
+export function getConversationDisplayActivityMs(conversation: Pick<Conversation, "messages" | "lastActivityIso">): number {
+  const lastMessage = conversation.messages.at(-1);
+  if (lastMessage) {
+    return getMessageDisplayMs(lastMessage as unknown as Record<string, unknown>);
+  }
+  return new Date(conversation.lastActivityIso).getTime();
+}
+
 export function displayGuestName(guestName: string | null | undefined, guestPhone: string): string {
   const n = typeof guestName === "string" ? guestName.trim() : "";
   if (n.length > 0) return n;
@@ -489,7 +582,9 @@ export function mergeConversationsTableWithMessages(
   if (convRows.length === 0) return [];
 
   const sortedMsgs = [...msgRows].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    (a, b) =>
+      getMessageDisplayMs(a as Record<string, unknown>) -
+      getMessageDisplayMs(b as Record<string, unknown>)
   );
   const hotelIdentities = resolveHotelWaIdentitiesSet({
     twilioEnv: options.twilioEnv ?? process.env.TWILIO_WHATSAPP_ADDRESS,
@@ -618,7 +713,7 @@ export function buildMessageFromWubbyRow(
     message: {
       id: String(row.id),
       body,
-      sentAt: formatMessageDetailTime(row.created_at),
+      sentAt: formatMessageDisplayTime(row as Record<string, unknown>),
       sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
       sender,
       ...(fmt ? { format: fmt } : {}),
@@ -635,7 +730,7 @@ export function buildMessageFromWubbyRow(
     },
     previewRaw,
     createdAtIso: row.created_at,
-    lastMessageLabel: formatMessageListTime(row.created_at),
+    lastMessageLabel: formatMessageDisplayListTime(row as Record<string, unknown>),
   };
 }
 

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { avatarGradientClass, initials } from "@/lib/avatar";
 import {
   formatMessageDetailTime,
+  formatMessageDisplayTime,
+  getConversationDisplayActivityMs,
   messageNeedsHumanAlert,
 } from "@/lib/chat-utils";
 import { MESSAGES_LIMIT } from "@/lib/message-limits";
@@ -45,7 +47,7 @@ function formatFileSize(bytes: number): string {
 
 function sortConversationsByActivity(list: Conversation[]): Conversation[] {
   return [...list].sort((a, b) => {
-    return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+    return getConversationDisplayActivityMs(b) - getConversationDisplayActivityMs(a);
   });
 }
 
@@ -527,6 +529,7 @@ function MessageBubble({
     isUser && typeof m.format === "string" && m.format.trim().toLowerCase() === "audio";
   const hasImageSource = Boolean(m.mediaUrl || m.mediaStoragePath);
   const isDocument = isMessageDocument(m);
+  const timeLabel = formatMessageDisplayTime(m as unknown as Record<string, unknown>) || m.sentAt;
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -573,7 +576,7 @@ function MessageBubble({
           )}
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:mt-2 sm:gap-x-3">
             <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
-              {m.sentAt}
+              {timeLabel}
             </time>
             {isAi && m.aiMeta && (
               <span className="max-w-full break-words text-[10px] tabular-nums text-[#6b665e]/80">

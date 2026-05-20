@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Conversation } from "@/lib/inbox-types";
+import { getConversationDisplayActivityMs } from "@/lib/chat-utils";
 import { type RealtimeUiStatus, useInboxRealtime } from "@/hooks/useInboxRealtime";
 
 type InboxResponse = {
@@ -12,7 +13,7 @@ type InboxResponse = {
 
 function sortByLastActivity(list: Conversation[]): Conversation[] {
   return [...list].sort((a, b) => {
-    return new Date(b.lastActivityIso).getTime() - new Date(a.lastActivityIso).getTime();
+    return getConversationDisplayActivityMs(b) - getConversationDisplayActivityMs(a);
   });
 }
 
