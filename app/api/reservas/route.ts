@@ -37,8 +37,6 @@ const RESERVA_SELECT = `
     children,
     pets,
     breakfast_included,
-    subtotal_before_iva,
-    iva_amount,
     total_amount,
     breakdown_json,
     conversation_id

@@ -108,40 +108,15 @@ function readMoneyValue(value: unknown): number | null {
   return Number.isFinite(amount) ? amount : null;
 }
 
-function readBreakdownMoney(breakdown: Record<string, unknown> | null | undefined, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = readMoneyValue(breakdown?.[key]);
-    if (value != null) return value;
-  }
-  return null;
-}
-
 export function getQuoteTaxAmounts(quote: ReservaQuoteRequest | null | undefined): {
   subtotalBeforeIva: number | null;
   ivaAmount: number | null;
   totalAmount: number | null;
 } {
-  const breakdown = quote?.breakdown_json ?? null;
-  const totalAmount =
-    readMoneyValue(quote?.total_amount) ??
-    readBreakdownMoney(breakdown, ["total_amount", "total", "total_con_iva"]);
-  let subtotalBeforeIva =
-    readMoneyValue(quote?.subtotal_before_iva) ??
-    readBreakdownMoney(breakdown, ["subtotal_before_iva", "subtotal", "subtotal_sin_iva", "subtotal_without_tax", "total_sin_iva", "base"]);
-  let ivaAmount =
-    readMoneyValue(quote?.iva_amount) ??
-    readBreakdownMoney(breakdown, ["iva_amount", "iva", "tax", "tax_amount"]);
-
-  if (subtotalBeforeIva == null && totalAmount != null && ivaAmount != null) {
-    subtotalBeforeIva = totalAmount - ivaAmount;
-  }
-  if (ivaAmount == null && totalAmount != null && subtotalBeforeIva != null) {
-    ivaAmount = totalAmount - subtotalBeforeIva;
-  }
-  if (subtotalBeforeIva == null && totalAmount != null) {
-    subtotalBeforeIva = totalAmount / 1.19;
-    ivaAmount = totalAmount - subtotalBeforeIva;
-  }
+  const totalAmount = readMoneyValue(quote?.total_amount);
+  const subtotalBeforeIva = totalAmount == null ? null : Math.round(totalAmount / 1.19);
+  const ivaAmount =
+    totalAmount == null || subtotalBeforeIva == null ? null : totalAmount - subtotalBeforeIva;
 
   return { subtotalBeforeIva, ivaAmount, totalAmount };
 }
