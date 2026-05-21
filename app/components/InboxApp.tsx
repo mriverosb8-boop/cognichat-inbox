@@ -1,6 +1,6 @@
 "use client";
 
-import type { SVGProps } from "react";
+import type { ClipboardEvent, SVGProps } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { avatarGradientClass, initials } from "@/lib/avatar";
 import {
@@ -793,6 +793,27 @@ export default function InboxApp() {
 
     setSelectedFile(file);
     setFilePreviewUrl(isPdf ? null : URL.createObjectURL(file));
+  };
+
+  const handleComposerPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+
+    const file = imageItem.getAsFile();
+    if (!file) return;
+
+    event.preventDefault();
+
+    const extension =
+      file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png";
+    const pastedFile = new File(
+      [file],
+      `pasted-image-${Date.now()}.${extension}`,
+      { type: file.type || "image/png" }
+    );
+
+    handleFileSelection(pastedFile);
   };
 
   const sendMessage = async () => {
@@ -1651,6 +1672,7 @@ export default function InboxApp() {
                     autoComplete="off"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
+                    onPaste={handleComposerPaste}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
