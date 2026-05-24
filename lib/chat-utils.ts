@@ -465,10 +465,6 @@ export function getMessageDisplayDate(message: Record<string, unknown>): Date {
     return new Date(0);
   }
 
-  if (isMediaMessage(message)) {
-    return new Date(date.getTime() - 5 * 60 * 60 * 1000);
-  }
-
   return date;
 }
 

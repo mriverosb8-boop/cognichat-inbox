@@ -24,6 +24,8 @@ type StatusFilter = "all" | "unread" | "ai_active" | "requires_attention" | "clo
 
 /** Ventana de conversación (WhatsApp / Meta) desde el último mensaje con `sender: "user"`. */
 const META_INBOX_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Imágenes/PDFs más recientes que esto cargan signed-url al abrir; el resto espera clic del usuario. */
+const LAZY_MEDIA_AUTO_LOAD_MS = 24 * 60 * 60 * 1000;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PDF_MIME_TYPE = "application/pdf";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -241,6 +243,173 @@ function IconUserCircle(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function getMessageAgeMs(message: Message): number | null {
+  const raw = message.sentAtIso;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function shouldAutoLoadMedia(message: Message): boolean {
+  const createdMs = getMessageAgeMs(message);
+  if (createdMs == null) return true;
+  return Date.now() - createdMs < LAZY_MEDIA_AUTO_LOAD_MS;
+}
+
+async function fetchSignedMediaUrl(message: Message, signal?: AbortSignal): Promise<string> {
+  if (!message.mediaStoragePath) {
+    throw new Error("missing storage path");
+  }
+
+  const params = new URLSearchParams();
+  params.set("path", message.mediaStoragePath);
+  if (message.mediaBucket) params.set("bucket", message.mediaBucket);
+
+  const response = await fetch(`/api/media/signed-url?${params.toString()}`, { signal });
+  if (!response.ok) {
+    throw new Error(`signed-url ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { signedUrl?: string };
+  if (!payload.signedUrl) {
+    throw new Error("signed-url vacío");
+  }
+
+  return payload.signedUrl;
+}
+
+type MediaLoadPhase = "deferred" | "loading" | "loaded" | "error";
+
+function resolveInitialMediaPhase(message: Message): MediaLoadPhase {
+  if (message.mediaUrl) return "loaded";
+  if (!message.mediaStoragePath) return "error";
+  return shouldAutoLoadMedia(message) ? "loading" : "deferred";
+}
+
+function useLazySignedMediaUrl(message: Message) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(message.mediaUrl ?? null);
+  const [phase, setPhase] = useState<MediaLoadPhase>(() => resolveInitialMediaPhase(message));
+  const abortRef = useRef<AbortController | null>(null);
+
+  const requestLoad = useCallback(async () => {
+    if (message.mediaUrl) {
+      setSignedUrl(message.mediaUrl);
+      setPhase("loaded");
+      return;
+    }
+
+    if (!message.mediaStoragePath) {
+      setSignedUrl(null);
+      setPhase("error");
+      return;
+    }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setPhase("loading");
+    setSignedUrl(null);
+
+    try {
+      const url = await fetchSignedMediaUrl(message, controller.signal);
+      if (controller.signal.aborted) return;
+      setSignedUrl(url);
+      setPhase("loaded");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSignedUrl(null);
+      setPhase("error");
+    }
+  }, [message]);
+
+  useEffect(() => {
+    if (message.mediaUrl || !message.mediaStoragePath || !shouldAutoLoadMedia(message)) {
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    void (async () => {
+      try {
+        const url = await fetchSignedMediaUrl(message, controller.signal);
+        if (controller.signal.aborted) return;
+        setSignedUrl(url);
+        setPhase("loaded");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSignedUrl(null);
+        setPhase("error");
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    message.id,
+    message.mediaUrl,
+    message.mediaStoragePath,
+    message.mediaBucket,
+    message.sentAtIso,
+    message,
+  ]);
+
+  return { signedUrl, phase, requestLoad };
+}
+
+function LazyImagePlaceholder({
+  label,
+  onLoad,
+}: {
+  label: string;
+  onLoad: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onLoad}
+      className="flex h-48 w-[260px] max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[#c8a97e]/60 bg-[#f8f6f2] px-4 text-[#6b665e] shadow-sm transition hover:border-[#c8a97e] hover:bg-[#f1ece4]"
+    >
+      <IconImage className="h-8 w-8 opacity-70" aria-hidden />
+      <span className="text-sm font-medium text-[#1f1f1c]">{label}</span>
+    </button>
+  );
+}
+
+function LazyMediaLoadingState({ label }: { label: string }) {
+  return (
+    <div className="flex h-48 w-[260px] max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-[#e7dfd4] bg-[#f8f6f2] px-4 text-[#6b665e]">
+      <svg className="h-6 w-6 animate-spin opacity-70" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+        <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      <span className="text-sm">{label}</span>
+    </div>
+  );
+}
+
+function LazyMediaErrorState({
+  label,
+  onRetry,
+}: {
+  label: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex h-48 w-[260px] max-w-full flex-col items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 text-rose-900">
+      <p className="text-center text-sm">{label}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-rose-900 shadow-sm transition hover:bg-rose-100"
+      >
+        Reintentar
+      </button>
+    </div>
+  );
+}
+
 function Avatar({
   name,
   seed,
@@ -271,64 +440,8 @@ function PrivateWhatsAppImage({
 }: {
   message: Message;
 }) {
-  const [signedUrl, setSignedUrl] = useState<string | null>(message.mediaUrl ?? null);
-  const [status, setStatus] = useState<"idle" | "loading" | "error">(
-    message.mediaUrl ? "idle" : "loading"
-  );
+  const { signedUrl, phase, requestLoad } = useLazySignedMediaUrl(message);
   const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    if (message.mediaUrl) {
-      setSignedUrl(message.mediaUrl);
-      setStatus("idle");
-      return;
-    }
-
-    if (!message.mediaStoragePath) {
-      setSignedUrl(null);
-      setStatus("error");
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function loadSignedUrl() {
-      setSignedUrl(null);
-      setStatus("loading");
-
-      try {
-        const params = new URLSearchParams();
-        params.set("path", message.mediaStoragePath!);
-        if (message.mediaBucket) params.set("bucket", message.mediaBucket);
-
-        const response = await fetch(`/api/media/signed-url?${params.toString()}`, {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`signed-url ${response.status}`);
-        }
-
-        const payload = (await response.json()) as { signedUrl?: string };
-        if (!payload.signedUrl) {
-          throw new Error("signed-url vacío");
-        }
-
-        setSignedUrl(payload.signedUrl);
-        setStatus("idle");
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setSignedUrl(null);
-        setStatus("error");
-      }
-    }
-
-    void loadSignedUrl();
-
-    return () => {
-      controller.abort();
-    };
-  }, [message.mediaBucket, message.mediaStoragePath, message.mediaUrl]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -341,12 +454,21 @@ function PrivateWhatsAppImage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen]);
 
-  if (status === "loading") {
-    return <p className="text-sm text-[#6b665e]">Cargando imagen...</p>;
+  if (phase === "deferred") {
+    return <LazyImagePlaceholder label="Cargar imagen" onLoad={() => void requestLoad()} />;
   }
 
-  if (!signedUrl || status === "error") {
-    return <p className="text-sm text-[#6b665e]">No se pudo cargar la imagen</p>;
+  if (phase === "loading") {
+    return <LazyMediaLoadingState label="Cargando imagen..." />;
+  }
+
+  if (phase === "error" || !signedUrl) {
+    return (
+      <LazyMediaErrorState
+        label="No se pudo cargar la imagen"
+        onRetry={() => void requestLoad()}
+      />
+    );
   }
 
   const alt = message.body || "Imagen enviada por WhatsApp";
@@ -406,63 +528,7 @@ function PrivateWhatsAppDocument({
 }: {
   message: Message;
 }) {
-  const [signedUrl, setSignedUrl] = useState<string | null>(message.mediaUrl ?? null);
-  const [status, setStatus] = useState<"idle" | "loading" | "error">(
-    message.mediaUrl ? "idle" : "loading"
-  );
-
-  useEffect(() => {
-    if (message.mediaUrl) {
-      setSignedUrl(message.mediaUrl);
-      setStatus("idle");
-      return;
-    }
-
-    if (!message.mediaStoragePath) {
-      setSignedUrl(null);
-      setStatus("error");
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function loadSignedUrl() {
-      setSignedUrl(null);
-      setStatus("loading");
-
-      try {
-        const params = new URLSearchParams();
-        params.set("path", message.mediaStoragePath!);
-        if (message.mediaBucket) params.set("bucket", message.mediaBucket);
-
-        const response = await fetch(`/api/media/signed-url?${params.toString()}`, {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`signed-url ${response.status}`);
-        }
-
-        const payload = (await response.json()) as { signedUrl?: string };
-        if (!payload.signedUrl) {
-          throw new Error("signed-url vacío");
-        }
-
-        setSignedUrl(payload.signedUrl);
-        setStatus("idle");
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setSignedUrl(null);
-        setStatus("error");
-      }
-    }
-
-    void loadSignedUrl();
-
-    return () => {
-      controller.abort();
-    };
-  }, [message.mediaBucket, message.mediaStoragePath, message.mediaUrl]);
+  const { signedUrl, phase, requestLoad } = useLazySignedMediaUrl(message);
 
   const filename = message.mediaFilename || "Documento.pdf";
   const caption = message.body || message.mediaCaption || "";
@@ -477,7 +543,7 @@ function PrivateWhatsAppDocument({
           <p className="truncate text-[13px] font-semibold text-[#1f1f1c]">{filename}</p>
           <p className="mt-0.5 text-[11px] text-[#6b665e]">Documento PDF</p>
         </div>
-        {signedUrl && status !== "error" ? (
+        {phase === "loaded" && signedUrl ? (
           <a
             href={signedUrl}
             target="_blank"
@@ -486,10 +552,24 @@ function PrivateWhatsAppDocument({
           >
             Abrir PDF
           </a>
+        ) : phase === "deferred" ? (
+          <button
+            type="button"
+            onClick={() => void requestLoad()}
+            className="shrink-0 rounded-lg border border-[#c5d4e0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#1f1f1c] shadow-sm transition hover:bg-[#f1ece4]"
+          >
+            Cargar documento
+          </button>
+        ) : phase === "loading" ? (
+          <span className="shrink-0 text-[11px] text-[#6b665e]">Cargando...</span>
         ) : (
-          <span className="shrink-0 text-[11px] text-[#6b665e]">
-            {status === "loading" ? "Cargando..." : "No disponible"}
-          </span>
+          <button
+            type="button"
+            onClick={() => void requestLoad()}
+            className="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-900 shadow-sm transition hover:bg-rose-100"
+          >
+            Reintentar
+          </button>
         )}
       </div>
       {caption ? <p className="whitespace-pre-wrap break-words">{caption}</p> : null}
@@ -566,10 +646,10 @@ function MessageBubble({
             </p>
           )}
           {isDocument ? (
-            <PrivateWhatsAppDocument message={m} />
+            <PrivateWhatsAppDocument key={m.id} message={m} />
           ) : m.messageType === "image" && hasImageSource ? (
             <div className="flex max-w-full flex-col gap-2">
-              <PrivateWhatsAppImage message={m} />
+              <PrivateWhatsAppImage key={m.id} message={m} />
               {m.body ? <p className="mt-2 whitespace-pre-wrap break-words">{m.body}</p> : null}
             </div>
           ) : (
