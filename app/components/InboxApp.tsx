@@ -8,6 +8,7 @@ import {
   formatMessageDisplayTime,
   getConversationDisplayActivityMs,
   messageNeedsHumanAlert,
+  normalizePhoneDigits,
 } from "@/lib/chat-utils";
 import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
@@ -593,6 +594,7 @@ function MessageBubble({
 export default function InboxApp() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [requestedConversationId, setRequestedConversationId] = useState<string | null>(null);
+  const [activeHotelId, setActiveHotelId] = useState<string | null>(null);
   const {
     conversations,
     setConversations,
@@ -604,7 +606,9 @@ export default function InboxApp() {
     dismissUrgentHandoffBanner,
     realtimeUiStatus,
     realtimeErrorDetail,
-  } = useConversations({ activeConversationId: selectedId });
+    availableHotels,
+    activeHotelId: resolvedActiveHotelId,
+  } = useConversations({ activeConversationId: selectedId, activeHotelId });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [propertyFilter, setPropertyFilter] = useState<string>("all");
@@ -633,6 +637,12 @@ export default function InboxApp() {
     const conversationId = new URLSearchParams(window.location.search).get("conversationId")?.trim();
     if (conversationId) setRequestedConversationId(conversationId);
   }, []);
+
+  useEffect(() => {
+    if (resolvedActiveHotelId && activeHotelId === null) {
+      setActiveHotelId(resolvedActiveHotelId);
+    }
+  }, [resolvedActiveHotelId, activeHotelId]);
 
   useEffect(() => {
     setActionError(null);
@@ -833,8 +843,9 @@ export default function InboxApp() {
       try {
         const formData = new FormData();
         formData.set("conversationId", selectedConv!.id);
-        formData.set("to", selectedConv!.guestPhone);
+        formData.set("to", normalizePhoneDigits(selectedConv!.guestPhone));
         if (text) formData.set("caption", text);
+        formData.set("hotelId", activeHotelId ?? "");
         formData.set("file", selectedFile);
 
         const res = await fetch("/api/send-whatsapp-media", {
@@ -954,9 +965,10 @@ export default function InboxApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          guestPhone: selectedConv!.guestPhone,
+          guestPhone: normalizePhoneDigits(selectedConv!.guestPhone),
           message: text,
           conversationId: selectedConv!.id,
+          hotelId: activeHotelId,
         }),
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; skipped?: boolean };
@@ -1379,6 +1391,38 @@ export default function InboxApp() {
                 );
               })}
             </div>
+
+            {availableHotels.length >= 2 && (
+              <div>
+                <label
+                  htmlFor="active-hotel-filter"
+                  className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6b665e]"
+                >
+                  Hotel activo
+                </label>
+                <select
+                  id="active-hotel-filter"
+                  value={activeHotelId ?? resolvedActiveHotelId ?? ""}
+                  onChange={(e) => {
+                    setActiveHotelId(e.target.value);
+                    setSelectedId("");
+                  }}
+                  className="w-full cursor-pointer appearance-none rounded-xl border border-[#e7dfd4] bg-white py-2.5 pl-3.5 pr-10 text-[13px] text-[#1f1f1c] shadow-sm focus:border-[#c8a97e] focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b665e'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 0.75rem center",
+                    backgroundSize: "1rem",
+                  }}
+                >
+                  {availableHotels.map((hotel) => (
+                    <option key={hotel.id} value={hotel.id}>
+                      {hotel.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label htmlFor="property-filter" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6b665e]">

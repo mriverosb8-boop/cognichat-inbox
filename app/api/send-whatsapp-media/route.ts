@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/require-user";
-import { normalizeWaIdentity } from "@/lib/chat-utils";
+import { normalizePhoneDigits, normalizeWaIdentity } from "@/lib/chat-utils";
 import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
@@ -12,6 +12,7 @@ const PDF_MIME_TYPE = "application/pdf";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const DEFAULT_GRAPH_API_VERSION = "v21.0";
+const HOTELS_TABLE = "hotels";
 const OPTIONAL_WUBBY_COLUMNS = [
   "conversation_id",
   "direction",
@@ -27,6 +28,7 @@ const OPTIONAL_WUBBY_COLUMNS = [
   "meta_media_id",
   "media_bucket",
   "whatsapp_message_id",
+  "hotel_id",
 ] as const;
 
 type WhatsappMediaType = "image" | "document";
@@ -53,18 +55,36 @@ function cloudApiToNumber(raw: string): string {
   return normalizeWaIdentity(raw).replace(/^\+/, "");
 }
 
-function readBusinessWhatsappSender(): string {
-  const explicit = readEnv(
-    "WHATSAPP_BUSINESS_PHONE_NUMBER",
-    "META_WHATSAPP_BUSINESS_PHONE",
-    "WHATSAPP_FROM"
-  );
-  if (explicit) return normalizeWaIdentity(explicit);
+async function readHotelWhatsappConfig(
+  hotelId: string | null
+): Promise<
+  | { ok: true; phoneNumberId: string; sender: string }
+  | { ok: false; error: string }
+> {
+  if (!hotelId) {
+    return { ok: false, error: "El hotel no tiene WhatsApp configurado" };
+  }
 
-  const firstHotelNumber = readEnv("HOTEL_WHATSAPP_PHONE_DIGITS")
-    .split(",")[0]
-    ?.trim();
-  return firstHotelNumber ? normalizeWaIdentity(firstHotelNumber) : "";
+  const supabase = getSupabaseServerClient();
+  const { data: hotel, error } = await supabase
+    .from(HOTELS_TABLE)
+    .select("whatsapp_phone_number_id, whatsapp_number")
+    .eq("id", hotelId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[send-whatsapp-media] hotel lookup failed", error);
+    return { ok: false, error: "El hotel no tiene WhatsApp configurado" };
+  }
+
+  const phoneNumberId = String(hotel?.whatsapp_phone_number_id ?? "").trim();
+  const sender = normalizePhoneDigits(hotel?.whatsapp_number ?? "");
+
+  if (!phoneNumberId || !sender) {
+    return { ok: false, error: "El hotel no tiene WhatsApp configurado" };
+  }
+
+  return { ok: true, phoneNumberId, sender };
 }
 
 function readMissingColumn(errorMessage: string): string | null {
@@ -143,6 +163,8 @@ export async function POST(request: Request) {
     const conversationId = String(formData.get("conversationId") ?? "").trim();
     const toRaw = String(formData.get("to") ?? "").trim();
     const caption = String(formData.get("caption") ?? "").trim();
+    const hotelIdRaw = String(formData.get("hotelId") ?? "").trim();
+    const hotelId = hotelIdRaw || null;
     const file = formData.get("file");
 
     if (!conversationId) {
@@ -160,20 +182,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const token = readEnv("WHATSAPP_TOKEN", "WHATSAPP_ACCESS_TOKEN", "META_WHATSAPP_TOKEN");
-    const phoneNumberId = readEnv("WHATSAPP_PHONE_NUMBER_ID", "META_WHATSAPP_PHONE_NUMBER_ID");
-    const graphVersion = readEnv("WHATSAPP_GRAPH_API_VERSION", "META_GRAPH_API_VERSION") || DEFAULT_GRAPH_API_VERSION;
-    const sender = readBusinessWhatsappSender();
-
-    if (!token || !phoneNumberId) {
-      return NextResponse.json(
-        { error: "Faltan WHATSAPP_TOKEN/WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID" },
-        { status: 500 }
-      );
+    const hotelWhatsapp = await readHotelWhatsappConfig(hotelId);
+    if (!hotelWhatsapp.ok) {
+      return NextResponse.json({ error: hotelWhatsapp.error }, { status: 400 });
     }
-    if (!sender) {
+
+    const token = readEnv("WHATSAPP_TOKEN", "WHATSAPP_ACCESS_TOKEN", "META_WHATSAPP_TOKEN");
+    const graphVersion = readEnv("WHATSAPP_GRAPH_API_VERSION", "META_GRAPH_API_VERSION") || DEFAULT_GRAPH_API_VERSION;
+    const phoneNumberId = hotelWhatsapp.phoneNumberId;
+    const sender = hotelWhatsapp.sender;
+
+    if (!token) {
       return NextResponse.json(
-        { error: "Falta WHATSAPP_BUSINESS_PHONE_NUMBER o HOTEL_WHATSAPP_PHONE_DIGITS para registrar el remitente" },
+        { error: "Falta WHATSAPP_TOKEN/WHATSAPP_ACCESS_TOKEN" },
         { status: 500 }
       );
     }
@@ -269,13 +290,12 @@ export async function POST(request: Request) {
     const insertPayload = {
       created_at: now,
       message: caption || "",
-      recipient: normalizeWaIdentity(toRaw),
+      recipient: normalizePhoneDigits(toRaw),
       sender,
       conversation_id: conversationId,
+      ...(hotelId ? { hotel_id: hotelId } : {}),
       direction: "outbound",
-      sender_type: "agent",
-      message_author: "agent",
-      from_ai: false,
+      origin: "human",
       format: whatsappType,
       message_type: whatsappType,
       media_storage_path: storagePath,

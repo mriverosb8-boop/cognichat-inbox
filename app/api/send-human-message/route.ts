@@ -1,7 +1,39 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/require-user";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
+
+async function readHotelWhatsappConfig(hotelId: string | null | undefined): Promise<{
+  whatsappPhoneNumberId: string | null;
+  whatsappNumber: string | null;
+}> {
+  const empty = { whatsappPhoneNumberId: null, whatsappNumber: null };
+  const trimmedHotelId = typeof hotelId === "string" ? hotelId.trim() : "";
+  if (!trimmedHotelId) return empty;
+
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data: hotel, error } = await supabase
+      .from("hotels")
+      .select("whatsapp_phone_number_id, whatsapp_number")
+      .eq("id", trimmedHotelId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[send-human-message] hotel lookup failed", error);
+      return empty;
+    }
+
+    return {
+      whatsappPhoneNumberId: hotel?.whatsapp_phone_number_id ?? null,
+      whatsappNumber: hotel?.whatsapp_number ?? null,
+    };
+  } catch (e) {
+    console.error("[send-human-message] hotel lookup exception", e);
+    return empty;
+  }
+}
 
 /**
  * Envía el mensaje humano a n8n (no Twilio desde el frontend).
@@ -16,6 +48,7 @@ export async function POST(request: Request) {
       guestPhone?: string;
       message?: string;
       conversationId?: string;
+      hotelId?: string | null;
     };
 
     const guestPhone = body.guestPhone?.trim();
@@ -37,10 +70,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const hotelWhatsapp = await readHotelWhatsappConfig(body.hotelId);
+
     const payload = {
       guestPhone,
       message,
       conversationId: body.conversationId ?? null,
+      hotelId: body.hotelId ?? null,
+      whatsappPhoneNumberId: hotelWhatsapp.whatsappPhoneNumberId,
+      whatsappNumber: hotelWhatsapp.whatsappNumber,
       source: "FerrarIA-inbox",
       sentAt: new Date().toISOString(),
     };

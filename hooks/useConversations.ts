@@ -5,9 +5,16 @@ import type { Conversation } from "@/lib/inbox-types";
 import { getConversationDisplayActivityMs } from "@/lib/chat-utils";
 import { type RealtimeUiStatus, useInboxRealtime } from "@/hooks/useInboxRealtime";
 
+type AvailableHotel = {
+  id: string;
+  name: string;
+};
+
 type InboxResponse = {
   conversations: Conversation[];
   fetchedRows?: number;
+  availableHotels?: AvailableHotel[];
+  activeHotelId?: string | null;
   error?: string;
 };
 
@@ -24,10 +31,16 @@ export type RefetchOptions = {
 
 export type UseConversationsOptions = {
   activeConversationId?: string;
+  activeHotelId?: string | null;
 };
 
+export type { AvailableHotel };
+
 export function useConversations(options?: UseConversationsOptions) {
+  const activeHotelId = options?.activeHotelId ?? null;
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [availableHotels, setAvailableHotels] = useState<AvailableHotel[]>([]);
+  const [resolvedActiveHotelId, setResolvedActiveHotelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [urgentHandoffBannerVisible, setUrgentHandoffBannerVisible] = useState(false);
@@ -50,13 +63,20 @@ export function useConversations(options?: UseConversationsOptions) {
       setError(null);
     }
     try {
-      const res = await fetch("/api/inbox", { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (activeHotelId) {
+        params.set("hotelId", activeHotelId);
+      }
+      const query = params.toString();
+      const res = await fetch(query ? `/api/inbox?${query}` : "/api/inbox", { cache: "no-store" });
       const json = (await res.json()) as InboxResponse;
       if (!res.ok) {
         throw new Error(json.error ?? "No se pudo cargar la bandeja");
       }
       const sorted = sortByLastActivity(json.conversations ?? []);
       setConversations(sorted);
+      setAvailableHotels(json.availableHotels ?? []);
+      setResolvedActiveHotelId(json.activeHotelId ?? null);
       setError(null);
     } catch (e) {
       if (!silent) {
@@ -68,7 +88,7 @@ export function useConversations(options?: UseConversationsOptions) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [activeHotelId]);
 
   useEffect(() => {
     void load();
@@ -148,5 +168,7 @@ export function useConversations(options?: UseConversationsOptions) {
     dismissUrgentHandoffBanner,
     realtimeUiStatus,
     realtimeErrorDetail,
+    availableHotels,
+    activeHotelId: resolvedActiveHotelId,
   };
 }

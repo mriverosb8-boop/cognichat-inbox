@@ -11,21 +11,148 @@ import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { requireSessionUser } from "@/lib/auth/require-user";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { MESSAGE_FETCH_LIMIT, MESSAGES_LIMIT } from "@/lib/message-limits";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const HOTEL_USERS_TABLE = "hotel_users";
+const HOTELS_TABLE = "hotels";
+
+type AvailableHotel = {
+  id: string;
+  name: string;
+};
+
+function emptyInboxResponse(availableHotels: AvailableHotel[] = [], activeHotelId: string | null = null) {
+  return NextResponse.json({
+    conversations: [],
+    fetchedConversations: 0,
+    fetchedMessages: 0,
+    messageLimit: MESSAGES_LIMIT,
+    availableHotels,
+    activeHotelId,
+  });
+}
+
+async function resolveAllowedHotelIds(
+  supabase: SupabaseClient,
+  user: User
+): Promise<string[]> {
+  const { data: membershipRows, error: membershipError } = await supabase
+    .from(HOTEL_USERS_TABLE)
+    .select("hotel_id, role")
+    .eq("user_id", user.id);
+
+  if (membershipError) {
+    throw new Error(membershipError.message);
+  }
+
+  const rows = membershipRows ?? [];
+  const isSuperAdmin = rows.some((row) => String(row.role ?? "").trim() === "super_admin");
+
+  if (isSuperAdmin) {
+    const { data: hotelRows, error: hotelsError } = await supabase.from(HOTELS_TABLE).select("id");
+    if (hotelsError) {
+      throw new Error(hotelsError.message);
+    }
+    return (hotelRows ?? []).map((row) => String(row.id)).filter(Boolean);
+  }
+
+  const allowedHotelIds = new Set<string>();
+  for (const row of rows) {
+    if (row.hotel_id != null) {
+      allowedHotelIds.add(String(row.hotel_id));
+    }
+  }
+  return [...allowedHotelIds];
+}
+
+async function resolveAvailableHotels(
+  supabase: SupabaseClient,
+  allowedHotelIds: string[]
+): Promise<AvailableHotel[]> {
+  if (allowedHotelIds.length === 0) return [];
+
+  const { data: hotelRows, error } = await supabase
+    .from(HOTELS_TABLE)
+    .select("id, name")
+    .eq("is_active", true)
+    .in("id", allowedHotelIds)
+    .order("name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (hotelRows ?? [])
+    .map((row) => ({
+      id: String(row.id),
+      name: String(row.name ?? row.id),
+    }))
+    .filter((row) => row.id);
+}
+
+function resolveActiveHotelId(
+  requestedHotelId: string,
+  allowedHotelIds: string[],
+  availableHotels: AvailableHotel[]
+): { activeHotelId: string | null; forbidden: boolean } {
+  if (requestedHotelId) {
+    if (!allowedHotelIds.includes(requestedHotelId)) {
+      return { activeHotelId: null, forbidden: true };
+    }
+    return { activeHotelId: requestedHotelId, forbidden: false };
+  }
+
+  if (availableHotels.length === 0) {
+    return { activeHotelId: null, forbidden: false };
+  }
+
+  return { activeHotelId: availableHotels[0]!.id, forbidden: false };
+}
+
+export async function GET(request: Request) {
   try {
     const auth = await requireSessionUser();
     if (auth.response) return auth.response;
 
     const supabase = getSupabaseServerClient();
+    const allowedHotelIds = await resolveAllowedHotelIds(supabase, auth.user);
+    const requestedHotelId = new URL(request.url).searchParams.get("hotelId")?.trim() ?? "";
+    const availableHotels = await resolveAvailableHotels(supabase, allowedHotelIds);
+    const { activeHotelId, forbidden } = resolveActiveHotelId(
+      requestedHotelId,
+      allowedHotelIds,
+      availableHotels
+    );
+
+    console.log("[inbox GET] tenant access", {
+      userId: auth.user.id,
+      email: auth.user.email,
+      allowedHotelIds,
+      availableHotels,
+      activeHotelId,
+      requestedHotelId: requestedHotelId || null,
+    });
+
+    if (forbidden) {
+      return NextResponse.json({ error: "No autorizado para ver este hotel" }, { status: 403 });
+    }
+
+    if (allowedHotelIds.length === 0 || !activeHotelId) {
+      return emptyInboxResponse(availableHotels, activeHotelId);
+    }
 
     const [convResult, msgResult] = await Promise.all([
-      supabase.from(CONVERSATIONS_TABLE).select("*").order("updated_at", { ascending: false }),
+      supabase
+        .from(CONVERSATIONS_TABLE)
+        .select("*")
+        .eq("hotel_id", activeHotelId)
+        .order("updated_at", { ascending: false }),
       supabase
         .from(WUBBY_TABLE)
         .select("*")
+        .eq("hotel_id", activeHotelId)
         .order("created_at", { ascending: false })
         .limit(MESSAGE_FETCH_LIMIT),
     ]);
@@ -55,6 +182,8 @@ export async function GET() {
       fetchedConversations: convRows.length,
       fetchedMessages: msgRows.length,
       messageLimit: MESSAGES_LIMIT,
+      availableHotels,
+      activeHotelId,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error desconocido";

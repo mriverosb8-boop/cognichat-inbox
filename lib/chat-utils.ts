@@ -346,6 +346,14 @@ export function classifyMessageSender(
 
   if (guestNorm && s === guestNorm) return "user";
 
+  const originRaw = getRowField(row, "origin");
+  if (typeof originRaw === "string") {
+    const o = originRaw.trim().toLowerCase();
+    if (o === "human") return "agent";
+    if (o === "ai") return "ai";
+    if (o === "client" || o === "guest" || o === "user") return "user";
+  }
+
   const explicit =
     getRowField(row, "message_author", "sender_role", "Sender Role", "role", "tipo", "author") ??
     getRowField(row, "from_ai", "fromAI");
