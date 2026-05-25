@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/require-user";
+import { nowInColombiaNaive } from "@/lib/colombia-time";
 import { normalizePhoneDigits, normalizeWaIdentity } from "@/lib/chat-utils";
 import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -285,7 +286,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const now = new Date().toISOString();
+    const now = nowInColombiaNaive();
     const metaMessageId = messagePayload.messages?.[0]?.id ?? null;
     const insertPayload = {
       created_at: now,
