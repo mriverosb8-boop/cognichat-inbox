@@ -691,7 +691,6 @@ export default function InboxApp() {
   } = useConversations({ activeConversationId: selectedId, activeHotelId });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [propertyFilter, setPropertyFilter] = useState<string>("all");
   const [draft, setDraft] = useState("");
   const [mobileTab, setMobileTab] = useState<"list" | "chat">("list");
   const [guestOpen, setGuestOpen] = useState(false);
@@ -779,11 +778,6 @@ export default function InboxApp() {
     [selected]
   );
 
-  const propertyOptions = useMemo(() => {
-    const set = new Set(conversations.map((c) => c.guest.property));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
-  }, [conversations]);
-
   const filterCounts = useMemo(() => {
     const all = conversations.length;
     const unread = conversations.filter((c) => c.unreadCount > 0).length;
@@ -806,10 +800,6 @@ export default function InboxApp() {
       list = list.filter((c) => c.operationalStatus === "closed");
     }
 
-    if (propertyFilter !== "all") {
-      list = list.filter((c) => c.guest.property === propertyFilter);
-    }
-
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -822,7 +812,7 @@ export default function InboxApp() {
     }
 
     return sortConversationsByActivity(list);
-  }, [conversations, query, statusFilter, propertyFilter]);
+  }, [conversations, query, statusFilter]);
 
   const scrollToBottom = useCallback(() => {
     scrollEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1400,7 +1390,7 @@ export default function InboxApp() {
             <div className="flex items-end justify-between gap-2">
               <div>
                 <h2 className="text-[13px] font-semibold uppercase tracking-wider text-[#6b665e]">Cola operativa</h2>
-                <p className="mt-0.5 text-[11px] text-[#9c968c]">Estado IA / prioridad / propiedad</p>
+                <p className="mt-0.5 text-[11px] text-[#9c968c]">Estado IA / prioridad</p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <span className="rounded-md border border-[#e7dfd4] bg-[#f1ece4] px-2 py-0.5 text-[11px] font-medium tabular-nums text-[#6b665e] shadow-sm">
@@ -1504,30 +1494,6 @@ export default function InboxApp() {
               </div>
             )}
 
-            <div>
-              <label htmlFor="property-filter" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-[#6b665e]">
-                Propiedad
-              </label>
-              <select
-                id="property-filter"
-                value={propertyFilter}
-                onChange={(e) => setPropertyFilter(e.target.value)}
-                className="w-full cursor-pointer appearance-none rounded-xl border border-[#e7dfd4] bg-white py-2.5 pl-3.5 pr-10 text-[13px] text-[#1f1f1c] shadow-sm focus:border-[#c8a97e] focus:outline-none focus:ring-2 focus:ring-[#c8a97e]/20"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b665e'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "right 0.75rem center",
-                  backgroundSize: "1rem",
-                }}
-              >
-                <option value="all">Todas las propiedades</option>
-                {propertyOptions.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto bg-[#f8f6f2] scrollbar-app">

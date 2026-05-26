@@ -5,6 +5,7 @@
 export type WubbyWhatsappRow = {
   id: string | number;
   created_at: string;
+  hotel_id?: string | null;
   message: string | null;
   recipient: string | null;
   sender: string | null;

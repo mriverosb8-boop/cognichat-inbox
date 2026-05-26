@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { getConversationDisplayActivityMs, mergeConversationsTableWithMessages } from "@/lib/chat-utils";
 import {
+  buildHotelWhatsappByIdMap,
+  hotelWhatsappMapToRecord,
+} from "@/lib/hotel-whatsapp-map";
+import {
   CONVERSATIONS_TABLE,
   type ConversationDbRow,
   type InboxPatchAction,
@@ -31,6 +35,7 @@ function emptyInboxResponse(availableHotels: AvailableHotel[] = [], activeHotelI
     messageLimit: MESSAGES_LIMIT,
     availableHotels,
     activeHotelId,
+    hotelWhatsappById: {},
   });
 }
 
@@ -143,6 +148,18 @@ export async function GET(request: Request) {
       return emptyInboxResponse(availableHotels, activeHotelId);
     }
 
+    const { data: hotelWaRows, error: hotelWaError } = await supabase
+      .from(HOTELS_TABLE)
+      .select("id, whatsapp_number")
+      .in("id", allowedHotelIds);
+
+    if (hotelWaError) {
+      console.error("[inbox GET] hotels whatsapp", hotelWaError);
+      return NextResponse.json({ error: hotelWaError.message }, { status: 502 });
+    }
+
+    const hotelWhatsappById = buildHotelWhatsappByIdMap(hotelWaRows ?? []);
+
     const [convResult, msgResult] = await Promise.all([
       supabase
         .from(CONVERSATIONS_TABLE)
@@ -170,7 +187,7 @@ export async function GET(request: Request) {
     const msgRows = ((msgResult.data ?? []) as WubbyWhatsappRow[]).reverse();
 
     const conversations = mergeConversationsTableWithMessages(convRows, msgRows, {
-      twilioEnv: process.env.TWILIO_WHATSAPP_ADDRESS,
+      hotelWhatsappById,
       messageLimit: MESSAGES_LIMIT,
     });
     conversations.sort((a, b) => {
@@ -184,6 +201,7 @@ export async function GET(request: Request) {
       messageLimit: MESSAGES_LIMIT,
       availableHotels,
       activeHotelId,
+      hotelWhatsappById: hotelWhatsappMapToRecord(hotelWhatsappById),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error desconocido";

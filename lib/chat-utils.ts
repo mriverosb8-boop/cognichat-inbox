@@ -1,5 +1,9 @@
 import type { ConversationDbRow } from "@/lib/conversation-schema";
 import type { ControlMode, Conversation, Message, MessageSender, OperationalStatus } from "@/lib/inbox-types";
+import {
+  type HotelWhatsappByIdMap,
+  resolveHotelWaIdentitiesForRow,
+} from "@/lib/hotel-whatsapp-map";
 import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
 
@@ -581,7 +585,7 @@ function emptyReservation() {
 export function mergeConversationsTableWithMessages(
   convRows: ConversationDbRow[],
   msgRows: WubbyWhatsappRow[],
-  options: { twilioEnv?: string | null; messageLimit?: number }
+  options: { hotelWhatsappById: HotelWhatsappByIdMap; messageLimit?: number }
 ): Conversation[] {
   if (convRows.length === 0) return [];
 
@@ -590,13 +594,11 @@ export function mergeConversationsTableWithMessages(
       getMessageDisplayMs(a as Record<string, unknown>) -
       getMessageDisplayMs(b as Record<string, unknown>)
   );
-  const hotelIdentities = resolveHotelWaIdentitiesSet({
-    twilioEnv: options.twilioEnv ?? process.env.TWILIO_WHATSAPP_ADDRESS,
-  });
 
   const messagesByPhone = new Map<string, WubbyWhatsappRow[]>();
   for (const row of sortedMsgs) {
-    const g = normalizeWaIdentity(inferGuestPhone(row, hotelIdentities));
+    const rowHotelIdentities = resolveHotelWaIdentitiesForRow(row, options.hotelWhatsappById);
+    const g = normalizeWaIdentity(inferGuestPhone(row, rowHotelIdentities));
     if (!g || g === "unknown") continue;
     const list = messagesByPhone.get(g) ?? [];
     list.push(row);
@@ -613,7 +615,11 @@ export function mergeConversationsTableWithMessages(
 
     const lastRow = msgList.length > 0 ? msgList[msgList.length - 1]! : null;
     const lastMessage = lastRow
-      ? buildMessageFromWubbyRow(lastRow, guestPhone, hotelIdentities)
+      ? buildMessageFromWubbyRow(
+          lastRow,
+          guestPhone,
+          resolveHotelWaIdentitiesForRow(lastRow, options.hotelWhatsappById)
+        )
       : null;
     const lastPreview = lastMessage ? lastMessage.previewRaw : "Sin mensajes";
     const lastAt = lastMessage ? lastMessage.lastMessageLabel : "—";
@@ -627,7 +633,12 @@ export function mergeConversationsTableWithMessages(
     const title = displayGuestName(cr.guest_name, phoneDisplay);
 
     const messages: Message[] = msgList.map(
-      (msgRow) => buildMessageFromWubbyRow(msgRow, guestPhone, hotelIdentities).message
+      (msgRow) =>
+        buildMessageFromWubbyRow(
+          msgRow,
+          guestPhone,
+          resolveHotelWaIdentitiesForRow(msgRow, options.hotelWhatsappById)
+        ).message
     );
 
     const lastActivityIso = lastRow ? lastRow.created_at : cr.created_at || cr.updated_at;
@@ -686,8 +697,8 @@ export function guestSeed(guestPhone: string): string {
  * Dado un row de `Wubby_Whatsapp` y el teléfono del huésped (conversación destino),
  * deriva el `Message` para Realtime / UI incremental.
  *
- * `hotelIdentities` debe coincidir con merge del servidor (`mergeConversationsTableWithMessages`);
- * en cliente usar `resolveHotelWaIdentitiesSet()` con `NEXT_PUBLIC_HOTEL_WHATSAPP_PHONE_DIGITS`.
+ * `hotelIdentities` debe ser el set del whatsapp_number del hotel de la fila
+ * (vía `resolveHotelWaIdentitiesForRow` + mapa `hotel_id → whatsapp_number`).
  */
 export function buildMessageFromWubbyRow(
   row: WubbyWhatsappRow,

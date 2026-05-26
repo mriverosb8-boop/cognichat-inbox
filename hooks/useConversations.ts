@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Conversation } from "@/lib/inbox-types";
+import {
+  hotelWhatsappMapFromRecord,
+  type HotelWhatsappByIdMap,
+} from "@/lib/hotel-whatsapp-map";
 import { getConversationDisplayActivityMs } from "@/lib/chat-utils";
 import { type RealtimeUiStatus, useInboxRealtime } from "@/hooks/useInboxRealtime";
 
@@ -15,6 +19,7 @@ type InboxResponse = {
   fetchedRows?: number;
   availableHotels?: AvailableHotel[];
   activeHotelId?: string | null;
+  hotelWhatsappById?: Record<string, string>;
   error?: string;
 };
 
@@ -41,6 +46,7 @@ export function useConversations(options?: UseConversationsOptions) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [availableHotels, setAvailableHotels] = useState<AvailableHotel[]>([]);
   const [resolvedActiveHotelId, setResolvedActiveHotelId] = useState<string | null>(null);
+  const [hotelWhatsappById, setHotelWhatsappById] = useState<HotelWhatsappByIdMap>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [urgentHandoffBannerVisible, setUrgentHandoffBannerVisible] = useState(false);
@@ -77,6 +83,7 @@ export function useConversations(options?: UseConversationsOptions) {
       setConversations(sorted);
       setAvailableHotels(json.availableHotels ?? []);
       setResolvedActiveHotelId(json.activeHotelId ?? null);
+      setHotelWhatsappById(hotelWhatsappMapFromRecord(json.hotelWhatsappById ?? {}));
       setError(null);
     } catch (e) {
       if (!silent) {
@@ -148,6 +155,7 @@ export function useConversations(options?: UseConversationsOptions) {
   useInboxRealtime({
     setConversations,
     activeConversationId: options?.activeConversationId,
+    hotelWhatsappById,
     onMissingContext: () => {
       void loadRef.current({ silent: true });
     },

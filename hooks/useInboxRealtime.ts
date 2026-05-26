@@ -13,6 +13,10 @@ import {
 } from "@/lib/conversation-schema";
 import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import { WUBBY_TABLE, type WubbyWhatsappRow } from "@/lib/wubby-schema";
+import {
+  type HotelWhatsappByIdMap,
+  resolveHotelWaIdentitiesForRow,
+} from "@/lib/hotel-whatsapp-map";
 import type { Conversation } from "@/lib/inbox-types";
 import {
   applyConversationRowPatch,
@@ -22,11 +26,7 @@ import {
   getMessageDisplayMs,
   messageNeedsHumanAlert,
   normalizeWaIdentity,
-  resolveHotelWaIdentitiesSet,
 } from "@/lib/chat-utils";
-
-/** Clasificación coherente con el servidor (`mergeConversationsTableWithMessages`). */
-const HOTEL_WA_IDENTITIES = resolveHotelWaIdentitiesSet();
 
 type SetConversations = Dispatch<SetStateAction<Conversation[]>>;
 
@@ -39,6 +39,7 @@ export type RealtimeUiStatus = "waiting" | "connected" | "error";
 export type UseInboxRealtimeOptions = {
   setConversations: SetConversations;
   activeConversationId?: string;
+  hotelWhatsappById: HotelWhatsappByIdMap;
   /**
    * Se llama cuando llega un evento para el que no tenemos contexto local
    * (p. ej. INSERT en `conversations`, o mensaje de un teléfono desconocido).
@@ -139,12 +140,14 @@ function playUrgentHandoffBeep(): void {
 export function useInboxRealtime({
   setConversations,
   activeConversationId,
+  hotelWhatsappById,
   onMissingContext,
   onUrgentHandoffBanner,
   onRealtimeConnection,
 }: UseInboxRealtimeOptions) {
   const setConversationsRef = useRef(setConversations);
   const activeConversationIdRef = useRef(activeConversationId);
+  const hotelWhatsappByIdRef = useRef(hotelWhatsappById);
   const onMissingRef = useRef(onMissingContext);
   const onUrgentBannerRef = useRef(onUrgentHandoffBanner);
   const onConnRef = useRef(onRealtimeConnection);
@@ -161,6 +164,10 @@ export function useInboxRealtime({
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
+
+  useEffect(() => {
+    hotelWhatsappByIdRef.current = hotelWhatsappById;
+  }, [hotelWhatsappById]);
 
   useEffect(() => {
     onMissingRef.current = onMissingContext;
@@ -355,7 +362,11 @@ export function useInboxRealtime({
         }
         if (target.messages.some((m) => m.id === messageId)) return prev;
 
-        const built = buildMessageFromWubbyRow(row, target.guestPhone, HOTEL_WA_IDENTITIES);
+        const built = buildMessageFromWubbyRow(
+          row,
+          target.guestPhone,
+          resolveHotelWaIdentitiesForRow(row, hotelWhatsappByIdRef.current)
+        );
         const rowNeedsUrgent = messageNeedsHumanAlert(row as Record<string, unknown>);
 
         const urgentVisualPatch =
@@ -435,7 +446,11 @@ export function useInboxRealtime({
         const next = prev.map((c) => {
           const mi = c.messages.findIndex((m) => m.id === messageId);
           if (mi === -1) return c;
-          const built = buildMessageFromWubbyRow(newRow, c.guestPhone, HOTEL_WA_IDENTITIES);
+          const built = buildMessageFromWubbyRow(
+            newRow,
+            c.guestPhone,
+            resolveHotelWaIdentitiesForRow(newRow, hotelWhatsappByIdRef.current)
+          );
           const urgentVisualPatch =
             isUrgent && c.operationalStatus !== "closed"
               ? ({

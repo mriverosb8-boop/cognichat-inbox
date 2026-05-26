@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/require-user";
+import { buildHotelWhatsappByIdMap } from "@/lib/hotel-whatsapp-map";
 import {
   buildMessageFromWubbyRow,
   mergeConversationsTableWithMessages,
@@ -78,11 +79,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: msgResult.error.message }, { status: 502 });
     }
 
+    const { data: hotelRows } = await supabase.from("hotels").select("id, whatsapp_number");
+    const hotelWhatsappById = buildHotelWhatsappByIdMap(hotelRows ?? []);
+
     const conversations = mergeConversationsTableWithMessages(
       [convResult.data as ConversationDbRow],
       ((msgResult.data ?? []) as WubbyWhatsappRow[]).reverse(),
       {
-        twilioEnv: process.env.TWILIO_WHATSAPP_ADDRESS,
+        hotelWhatsappById,
         messageLimit: MESSAGES_LIMIT,
       }
     );
