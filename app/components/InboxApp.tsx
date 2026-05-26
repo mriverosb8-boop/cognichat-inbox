@@ -10,10 +10,11 @@ import {
   messageNeedsHumanAlert,
   normalizePhoneDigits,
 } from "@/lib/chat-utils";
-import { MESSAGES_LIMIT } from "@/lib/message-limits";
+import { appendConversationMessages } from "@/lib/message-limits";
 import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
 import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { useConversations } from "@/hooks/useConversations";
+import { useInboxConversationMessages } from "@/hooks/useInboxConversationMessages";
 import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { BrandHeaderMark } from "./BrandHeaderMark";
 import { InboxHeaderTabs } from "./InboxHeaderTabs";
@@ -689,6 +690,14 @@ export default function InboxApp() {
     availableHotels,
     activeHotelId: resolvedActiveHotelId,
   } = useConversations({ activeConversationId: selectedId, activeHotelId });
+
+  const conversationHotelId = activeHotelId ?? resolvedActiveHotelId;
+  useInboxConversationMessages(
+    selectedId,
+    conversationHotelId,
+    setConversations
+  );
+
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [draft, setDraft] = useState("");
@@ -972,7 +981,7 @@ export default function InboxApp() {
                   ...c,
                   messages: c.messages.some((m) => m.id === optimisticMediaMessage.id)
                     ? c.messages
-                    : [...c.messages, optimisticMediaMessage].slice(-MESSAGES_LIMIT),
+                    : appendConversationMessages(c.messages, optimisticMediaMessage),
                   lastMessagePreview: text || (selectedFileIsPdf ? `📄 ${selectedFile.name}` : "📷 Imagen"),
                   lastMessageAt: optimisticMediaMessage.sentAt,
                   lastActivityIso: sentAtIso,
@@ -1011,7 +1020,7 @@ export default function InboxApp() {
         c.id === selectedId
           ? {
               ...c,
-              messages: [...c.messages, newMsg].slice(-MESSAGES_LIMIT),
+              messages: appendConversationMessages(c.messages, newMsg),
               lastMessagePreview: text.length > 80 ? `${text.slice(0, 77)}…` : text,
               lastMessageAt: newMsg.sentAt,
               lastActivityIso: new Date().toISOString(),

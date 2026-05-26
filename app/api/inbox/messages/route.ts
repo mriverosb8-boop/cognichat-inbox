@@ -1,0 +1,107 @@
+import { NextResponse } from "next/server";
+import { buildMessageFromWubbyRow, normalizePhoneDigits, normalizeWaIdentity } from "@/lib/chat-utils";
+import { CONVERSATIONS_TABLE, type ConversationDbRow } from "@/lib/conversation-schema";
+import { fetchWubbyRowsForGuestAtHotel } from "@/lib/inbox-fetch-messages";
+import {
+  buildHotelWhatsappByIdMap,
+  resolveHotelWaIdentitiesForRow,
+} from "@/lib/hotel-whatsapp-map";
+import {
+  resolveActiveHotelId,
+  resolveAllowedHotelIds,
+  resolveAvailableHotels,
+} from "@/lib/inbox-tenant";
+import type { Message } from "@/lib/inbox-types";
+import { requireSessionUser } from "@/lib/auth/require-user";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
+
+export const dynamic = "force-dynamic";
+
+const HOTELS_TABLE = "hotels";
+
+export async function GET(request: Request) {
+  try {
+    const auth = await requireSessionUser();
+    if (auth.response) return auth.response;
+
+    const url = new URL(request.url);
+    const conversationId = url.searchParams.get("conversationId")?.trim() ?? "";
+    const requestedHotelId = url.searchParams.get("hotelId")?.trim() ?? "";
+
+    if (!conversationId) {
+      return NextResponse.json({ error: "conversationId es obligatorio" }, { status: 400 });
+    }
+
+    const supabase = getSupabaseServerClient();
+    const allowedHotelIds = await resolveAllowedHotelIds(supabase, auth.user);
+    const availableHotels = await resolveAvailableHotels(supabase, allowedHotelIds);
+    const { activeHotelId, forbidden } = resolveActiveHotelId(
+      requestedHotelId,
+      allowedHotelIds,
+      availableHotels
+    );
+
+    if (forbidden) {
+      return NextResponse.json({ error: "No autorizado para ver este hotel" }, { status: 403 });
+    }
+    if (!activeHotelId) {
+      return NextResponse.json({ error: "hotelId es obligatorio" }, { status: 400 });
+    }
+
+    const { data: convRow, error: convError } = await supabase
+      .from(CONVERSATIONS_TABLE)
+      .select("*")
+      .eq("id", conversationId)
+      .eq("hotel_id", activeHotelId)
+      .maybeSingle();
+
+    if (convError) {
+      console.error("[inbox messages GET] conversation", convError);
+      return NextResponse.json({ error: convError.message }, { status: 502 });
+    }
+    if (!convRow) {
+      return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
+    }
+
+    const cr = convRow as ConversationDbRow;
+    const guestPhoneDigits = normalizePhoneDigits(cr.guest_phone ?? "");
+    if (!guestPhoneDigits) {
+      return NextResponse.json({ error: "La conversación no tiene teléfono de huésped" }, { status: 400 });
+    }
+
+    const guestPhone = `+${guestPhoneDigits}`;
+
+    const { data: hotelWaRows, error: hotelWaError } = await supabase
+      .from(HOTELS_TABLE)
+      .select("id, whatsapp_number")
+      .eq("id", activeHotelId)
+      .maybeSingle();
+
+    if (hotelWaError) {
+      console.error("[inbox messages GET] hotel whatsapp", hotelWaError);
+      return NextResponse.json({ error: hotelWaError.message }, { status: 502 });
+    }
+
+    const hotelWhatsappById = buildHotelWhatsappByIdMap(
+      hotelWaRows ? [{ id: activeHotelId, whatsapp_number: hotelWaRows.whatsapp_number }] : []
+    );
+
+    const msgRows = await fetchWubbyRowsForGuestAtHotel(supabase, activeHotelId, guestPhoneDigits);
+
+    const messages: Message[] = msgRows.map((row) => {
+      const identities = resolveHotelWaIdentitiesForRow(row, hotelWhatsappById);
+      return buildMessageFromWubbyRow(row, guestPhone, identities).message;
+    });
+
+    return NextResponse.json({
+      conversationId,
+      guestPhone: normalizeWaIdentity(cr.guest_phone ?? guestPhone),
+      messages,
+      fetchedCount: messages.length,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error desconocido";
+    console.error("[inbox messages GET]", e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

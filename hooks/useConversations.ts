@@ -7,6 +7,7 @@ import {
   type HotelWhatsappByIdMap,
 } from "@/lib/hotel-whatsapp-map";
 import { getConversationDisplayActivityMs } from "@/lib/chat-utils";
+import { MESSAGES_LIMIT } from "@/lib/message-limits";
 import { type RealtimeUiStatus, useInboxRealtime } from "@/hooks/useInboxRealtime";
 
 type AvailableHotel = {
@@ -62,8 +63,8 @@ export function useConversations(options?: UseConversationsOptions) {
     setRealtimeErrorDetail(status === "error" ? detail : undefined);
   }, []);
 
-  const load = useCallback(async (options?: RefetchOptions) => {
-    const silent = options?.silent === true;
+  const load = useCallback(async (refetchOptions?: RefetchOptions) => {
+    const silent = refetchOptions?.silent === true;
     if (!silent) {
       setLoading(true);
       setError(null);
@@ -80,7 +81,15 @@ export function useConversations(options?: UseConversationsOptions) {
         throw new Error(json.error ?? "No se pudo cargar la bandeja");
       }
       const sorted = sortByLastActivity(json.conversations ?? []);
-      setConversations(sorted);
+      const activeId = options?.activeConversationId?.trim();
+      setConversations((prev) => {
+        if (!activeId) return sorted;
+        const prevActive = prev.find((c) => c.id === activeId);
+        if (!prevActive || prevActive.messages.length <= MESSAGES_LIMIT) return sorted;
+        return sorted.map((c) =>
+          c.id === activeId ? { ...c, messages: prevActive.messages } : c
+        );
+      });
       setAvailableHotels(json.availableHotels ?? []);
       setResolvedActiveHotelId(json.activeHotelId ?? null);
       setHotelWhatsappById(hotelWhatsappMapFromRecord(json.hotelWhatsappById ?? {}));
@@ -95,7 +104,7 @@ export function useConversations(options?: UseConversationsOptions) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [activeHotelId]);
+  }, [activeHotelId, options?.activeConversationId]);
 
   useEffect(() => {
     void load();

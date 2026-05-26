@@ -124,21 +124,34 @@ export function inferTwilioIdentity(rows: WubbyWhatsappRow[], envTwilio?: string
   return inferDominantWaBusinessIdentity(rows);
 }
 
+function isHumanAnswerSender(raw: string | null | undefined): boolean {
+  return String(raw ?? "").trim().toLowerCase() === "human answer";
+}
+
+/** Dígitos del hotel desde el Set (+E.164) de resolveHotelWaIdentitiesForRow. */
+function hotelPhoneDigitsFromIdentities(hotelIdentities: Set<string>): string {
+  const first = hotelIdentities.values().next().value as string | undefined;
+  return first ? normalizePhoneDigits(first) : "";
+}
+
 /**
- * Obtiene el teléfono del huésped para una fila.
- * Regla: si un lado coincide con una línea del hotel (Twilio o Cloud API), el huésped es el otro lado.
+ * Teléfono del huésped para agrupar mensajes: solo dígitos (sin +).
+ * Hotel = línea del mapa por hotel_id; "Human Answer" → huésped en recipient.
  */
 export function inferGuestPhone(row: WubbyWhatsappRow, hotelIdentities: Set<string>): string {
-  const s = normalizeWaIdentity(row.sender ?? "");
-  const r = normalizeWaIdentity(row.recipient ?? "");
-  const sHotel = Boolean(s && hotelIdentities.has(s));
-  const rHotel = Boolean(r && hotelIdentities.has(r));
+  const senderRaw = String(row.sender ?? "").trim();
+  const recipientRaw = String(row.recipient ?? "").trim();
+  const senderDigits = normalizePhoneDigits(senderRaw);
+  const recipientDigits = normalizePhoneDigits(recipientRaw);
+  const hotelDigits = hotelPhoneDigitsFromIdentities(hotelIdentities);
 
-  if (sHotel && r && !hotelIdentities.has(r)) return r;
-  if (rHotel && s && !hotelIdentities.has(s)) return s;
-  if (s && !hotelIdentities.has(s)) return s;
-  if (r && !hotelIdentities.has(r)) return r;
-  return s || r || "unknown";
+  if (isHumanAnswerSender(senderRaw)) {
+    return recipientDigits || "unknown";
+  }
+  if (hotelDigits && senderDigits && senderDigits === hotelDigits) {
+    return recipientDigits || "unknown";
+  }
+  return senderDigits || recipientDigits || "unknown";
 }
 
 export function getRowField(row: WubbyWhatsappRow, ...keys: string[]): unknown {
@@ -347,6 +360,11 @@ export function classifyMessageSender(
 ): MessageSender {
   const s = normalizeWaIdentity(row.sender ?? "");
   const r = normalizeWaIdentity(row.recipient ?? "");
+  const senderRaw = String(row.sender ?? "").trim();
+
+  if (isHumanAnswerSender(senderRaw)) {
+    return "agent";
+  }
 
   if (guestNorm && s === guestNorm) return "user";
 
@@ -598,7 +616,7 @@ export function mergeConversationsTableWithMessages(
   const messagesByPhone = new Map<string, WubbyWhatsappRow[]>();
   for (const row of sortedMsgs) {
     const rowHotelIdentities = resolveHotelWaIdentitiesForRow(row, options.hotelWhatsappById);
-    const g = normalizeWaIdentity(inferGuestPhone(row, rowHotelIdentities));
+    const g = inferGuestPhone(row, rowHotelIdentities);
     if (!g || g === "unknown") continue;
     const list = messagesByPhone.get(g) ?? [];
     list.push(row);
@@ -609,9 +627,10 @@ export function mergeConversationsTableWithMessages(
   const out: Conversation[] = [];
 
   for (const cr of convRows) {
-    const guestPhone = normalizeWaIdentity(cr.guest_phone ?? "");
+    const guestPhoneDigits = normalizePhoneDigits(cr.guest_phone ?? "");
+    const guestPhone = guestPhoneDigits ? `+${guestPhoneDigits}` : "";
     const phoneDisplay = guestPhone || String(cr.guest_phone ?? "").trim() || "—";
-    const msgList = guestPhone ? messagesByPhone.get(guestPhone) ?? [] : [];
+    const msgList = guestPhoneDigits ? messagesByPhone.get(guestPhoneDigits) ?? [] : [];
 
     const lastRow = msgList.length > 0 ? msgList[msgList.length - 1]! : null;
     const lastMessage = lastRow
@@ -754,11 +773,11 @@ export function findConversationForWubbyRow(
   conversations: Conversation[],
   row: WubbyWhatsappRow
 ): Conversation | null {
-  const s = normalizeWaIdentity(row.sender ?? "");
-  const r = normalizeWaIdentity(row.recipient ?? "");
+  const s = normalizePhoneDigits(row.sender ?? "");
+  const r = normalizePhoneDigits(row.recipient ?? "");
   if (!s && !r) return null;
   for (const c of conversations) {
-    const cp = normalizeWaIdentity(c.guestPhone);
+    const cp = normalizePhoneDigits(c.guestPhone);
     if (!cp) continue;
     if (cp === s || cp === r) return c;
   }

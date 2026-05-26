@@ -5,27 +5,25 @@ import {
   buildHotelWhatsappByIdMap,
   hotelWhatsappMapToRecord,
 } from "@/lib/hotel-whatsapp-map";
+import { fetchAllWubbyRowsForHotel } from "@/lib/inbox-fetch-messages";
+import {
+  resolveActiveHotelId,
+  resolveAllowedHotelIds,
+  resolveAvailableHotels,
+  type AvailableHotel,
+} from "@/lib/inbox-tenant";
 import {
   CONVERSATIONS_TABLE,
   type ConversationDbRow,
   type InboxPatchAction,
 } from "@/lib/conversation-schema";
-import type { WubbyWhatsappRow } from "@/lib/wubby-schema";
-import { WUBBY_TABLE } from "@/lib/wubby-schema";
 import { requireSessionUser } from "@/lib/auth/require-user";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { MESSAGE_FETCH_LIMIT, MESSAGES_LIMIT } from "@/lib/message-limits";
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { MESSAGES_LIMIT } from "@/lib/message-limits";
 
 export const dynamic = "force-dynamic";
 
-const HOTEL_USERS_TABLE = "hotel_users";
 const HOTELS_TABLE = "hotels";
-
-type AvailableHotel = {
-  id: string;
-  name: string;
-};
 
 function emptyInboxResponse(availableHotels: AvailableHotel[] = [], activeHotelId: string | null = null) {
   return NextResponse.json({
@@ -37,83 +35,6 @@ function emptyInboxResponse(availableHotels: AvailableHotel[] = [], activeHotelI
     activeHotelId,
     hotelWhatsappById: {},
   });
-}
-
-async function resolveAllowedHotelIds(
-  supabase: SupabaseClient,
-  user: User
-): Promise<string[]> {
-  const { data: membershipRows, error: membershipError } = await supabase
-    .from(HOTEL_USERS_TABLE)
-    .select("hotel_id, role")
-    .eq("user_id", user.id);
-
-  if (membershipError) {
-    throw new Error(membershipError.message);
-  }
-
-  const rows = membershipRows ?? [];
-  const isSuperAdmin = rows.some((row) => String(row.role ?? "").trim() === "super_admin");
-
-  if (isSuperAdmin) {
-    const { data: hotelRows, error: hotelsError } = await supabase.from(HOTELS_TABLE).select("id");
-    if (hotelsError) {
-      throw new Error(hotelsError.message);
-    }
-    return (hotelRows ?? []).map((row) => String(row.id)).filter(Boolean);
-  }
-
-  const allowedHotelIds = new Set<string>();
-  for (const row of rows) {
-    if (row.hotel_id != null) {
-      allowedHotelIds.add(String(row.hotel_id));
-    }
-  }
-  return [...allowedHotelIds];
-}
-
-async function resolveAvailableHotels(
-  supabase: SupabaseClient,
-  allowedHotelIds: string[]
-): Promise<AvailableHotel[]> {
-  if (allowedHotelIds.length === 0) return [];
-
-  const { data: hotelRows, error } = await supabase
-    .from(HOTELS_TABLE)
-    .select("id, name")
-    .eq("is_active", true)
-    .in("id", allowedHotelIds)
-    .order("name", { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (hotelRows ?? [])
-    .map((row) => ({
-      id: String(row.id),
-      name: String(row.name ?? row.id),
-    }))
-    .filter((row) => row.id);
-}
-
-function resolveActiveHotelId(
-  requestedHotelId: string,
-  allowedHotelIds: string[],
-  availableHotels: AvailableHotel[]
-): { activeHotelId: string | null; forbidden: boolean } {
-  if (requestedHotelId) {
-    if (!allowedHotelIds.includes(requestedHotelId)) {
-      return { activeHotelId: null, forbidden: true };
-    }
-    return { activeHotelId: requestedHotelId, forbidden: false };
-  }
-
-  if (availableHotels.length === 0) {
-    return { activeHotelId: null, forbidden: false };
-  }
-
-  return { activeHotelId: availableHotels[0]!.id, forbidden: false };
 }
 
 export async function GET(request: Request) {
@@ -160,31 +81,27 @@ export async function GET(request: Request) {
 
     const hotelWhatsappById = buildHotelWhatsappByIdMap(hotelWaRows ?? []);
 
-    const [convResult, msgResult] = await Promise.all([
-      supabase
-        .from(CONVERSATIONS_TABLE)
-        .select("*")
-        .eq("hotel_id", activeHotelId)
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from(WUBBY_TABLE)
-        .select("*")
-        .eq("hotel_id", activeHotelId)
-        .order("created_at", { ascending: false })
-        .limit(MESSAGE_FETCH_LIMIT),
-    ]);
+    const convResult = await supabase
+      .from(CONVERSATIONS_TABLE)
+      .select("*")
+      .eq("hotel_id", activeHotelId)
+      .order("updated_at", { ascending: false });
 
     if (convResult.error) {
       console.error("[inbox GET] conversations", convResult.error);
       return NextResponse.json({ error: convResult.error.message }, { status: 502 });
     }
-    if (msgResult.error) {
-      console.error("[inbox GET] messages", msgResult.error);
-      return NextResponse.json({ error: msgResult.error.message }, { status: 502 });
+
+    let msgRows;
+    try {
+      msgRows = await fetchAllWubbyRowsForHotel(supabase, activeHotelId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al cargar mensajes";
+      console.error("[inbox GET] messages", e);
+      return NextResponse.json({ error: msg }, { status: 502 });
     }
 
     const convRows = (convResult.data ?? []) as ConversationDbRow[];
-    const msgRows = ((msgResult.data ?? []) as WubbyWhatsappRow[]).reverse();
 
     const conversations = mergeConversationsTableWithMessages(convRows, msgRows, {
       hotelWhatsappById,
