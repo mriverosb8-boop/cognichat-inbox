@@ -28,6 +28,8 @@ export type WubbyWhatsappRow = {
   cause_request?: string | null;
   /** `yes` si el caso requiere atención humana (alertas Realtime) */
   cause_of_request?: string | null;
+  /** UUID del cliente para reconciliar optimista con realtime */
+  client_temp_id?: string | null;
 } & Record<string, unknown>;
 
 export const WUBBY_TABLE = "Wubby_Whatsapp";

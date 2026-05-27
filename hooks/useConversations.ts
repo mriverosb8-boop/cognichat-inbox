@@ -164,6 +164,7 @@ export function useConversations(options?: UseConversationsOptions) {
   useInboxRealtime({
     setConversations,
     activeConversationId: options?.activeConversationId,
+    activeHotelId: resolvedActiveHotelId,
     hotelWhatsappById,
     onMissingContext: () => {
       void loadRef.current({ silent: true });

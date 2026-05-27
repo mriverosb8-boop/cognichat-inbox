@@ -11,10 +11,11 @@ import {
   CONVERSATIONS_TABLE,
   type ConversationDbRow,
 } from "@/lib/conversation-schema";
-import { appendConversationMessages } from "@/lib/message-limits";
+import { upsertConversationMessage } from "@/lib/message-upsert";
 import { WUBBY_TABLE, type WubbyWhatsappRow } from "@/lib/wubby-schema";
 import {
   type HotelWhatsappByIdMap,
+  readRowHotelId,
   resolveHotelWaIdentitiesForRow,
 } from "@/lib/hotel-whatsapp-map";
 import type { Conversation } from "@/lib/inbox-types";
@@ -39,6 +40,8 @@ export type RealtimeUiStatus = "waiting" | "connected" | "error";
 export type UseInboxRealtimeOptions = {
   setConversations: SetConversations;
   activeConversationId?: string;
+  /** Hotel cargado en bandeja; enruta mensajes Wubby solo a conversaciones de ese tenant. */
+  activeHotelId?: string | null;
   hotelWhatsappById: HotelWhatsappByIdMap;
   /**
    * Se llama cuando llega un evento para el que no tenemos contexto local
@@ -63,6 +66,27 @@ function sortByActivity(list: Conversation[]): Conversation[] {
 
 function truncatePreview(preview: string): string {
   return preview.length > 120 ? `${preview.slice(0, 117)}…` : preview;
+}
+
+/** guest_phone (normalizado) + hotel_id del row Wubby vs hotel activo en memoria. */
+function rowMatchesInboxHotel(
+  row: WubbyWhatsappRow,
+  activeHotelId: string | null | undefined
+): boolean {
+  const rowHotelId = readRowHotelId(row);
+  if (!rowHotelId) return true;
+  const active = activeHotelId?.trim();
+  if (!active) return true;
+  return rowHotelId === active;
+}
+
+function findConversationForRealtimeRow(
+  conversations: Conversation[],
+  row: WubbyWhatsappRow,
+  activeHotelId: string | null | undefined
+): Conversation | null {
+  if (!rowMatchesInboxHotel(row, activeHotelId)) return null;
+  return findConversationForWubbyRow(conversations, row);
 }
 
 const URGENT_NOTIFICATION_TITLE = "🚨 Huésped requiere atención humana";
@@ -140,6 +164,7 @@ function playUrgentHandoffBeep(): void {
 export function useInboxRealtime({
   setConversations,
   activeConversationId,
+  activeHotelId,
   hotelWhatsappById,
   onMissingContext,
   onUrgentHandoffBanner,
@@ -147,6 +172,7 @@ export function useInboxRealtime({
 }: UseInboxRealtimeOptions) {
   const setConversationsRef = useRef(setConversations);
   const activeConversationIdRef = useRef(activeConversationId);
+  const activeHotelIdRef = useRef(activeHotelId);
   const hotelWhatsappByIdRef = useRef(hotelWhatsappById);
   const onMissingRef = useRef(onMissingContext);
   const onUrgentBannerRef = useRef(onUrgentHandoffBanner);
@@ -164,6 +190,10 @@ export function useInboxRealtime({
   useEffect(() => {
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
+
+  useEffect(() => {
+    activeHotelIdRef.current = activeHotelId;
+  }, [activeHotelId]);
 
   useEffect(() => {
     hotelWhatsappByIdRef.current = hotelWhatsappById;
@@ -349,19 +379,18 @@ export function useInboxRealtime({
     const handleWubbyInsert = (payload: WubbyPayload) => {
       const row = payload.new as WubbyWhatsappRow | null;
       if (!row) return;
-      const messageId = String(row.id);
       const setter = setConversationsRef.current;
 
       const handoffSlot: { current: HandoffQueue } = { current: null };
 
       setter((prev) => {
-        const target = findConversationForWubbyRow(prev, row);
+        const target = findConversationForRealtimeRow(prev, row, activeHotelIdRef.current);
         if (!target) {
-          requestMissing();
+          if (rowMatchesInboxHotel(row, activeHotelIdRef.current)) {
+            requestMissing();
+          }
           return prev;
         }
-        if (target.messages.some((m) => m.id === messageId)) return prev;
-
         const built = buildMessageFromWubbyRow(
           row,
           target.guestPhone,
@@ -405,7 +434,7 @@ export function useInboxRealtime({
           return {
             ...c,
             ...urgentVisualPatch,
-            messages: appendConversationMessages(c.messages, built.message),
+            messages: upsertConversationMessage(c.messages, built.message),
             lastMessagePreview: shouldBumpPreview
               ? truncatePreview(built.previewRaw)
               : c.lastMessagePreview,
@@ -442,6 +471,10 @@ export function useInboxRealtime({
       const handoffSlot: { current: HandoffQueue } = { current: null };
 
       setter((prev) => {
+        if (!rowMatchesInboxHotel(newRow, activeHotelIdRef.current)) {
+          return prev;
+        }
+
         let touched = false;
         const next = prev.map((c) => {
           const mi = c.messages.findIndex((m) => m.id === messageId);

@@ -11,6 +11,7 @@ import {
   normalizePhoneDigits,
 } from "@/lib/chat-utils";
 import { appendConversationMessages } from "@/lib/message-limits";
+import { upsertConversationMessage } from "@/lib/message-upsert";
 import type { ControlMode, Conversation, Message, OperationalStatus } from "@/lib/inbox-types";
 import { CONVERSATIONS_TABLE } from "@/lib/conversation-schema";
 import { useConversations } from "@/hooks/useConversations";
@@ -135,6 +136,25 @@ function IconSend(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
       <path d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0022.445-8.662a.75.75 0 000-1.5A60.517 60.517 0 003.478 2.404z" />
+    </svg>
+  );
+}
+
+/** Lucide Check (entrega pendiente). */
+function IconCheck(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** Doble check estilo WhatsApp: dos trazos desfasados horizontalmente. */
+function IconCheckCheck(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 32 24" fill="none" stroke="currentColor" strokeWidth={2} {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 14l5 5 10-11" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l5 5 10-11" />
     </svg>
   );
 }
@@ -612,6 +632,8 @@ function MessageBubble({
   const hasImageSource = Boolean(m.mediaUrl || m.mediaStoragePath);
   const isDocument = isMessageDocument(m);
   const timeLabel = formatMessageDisplayTime(m as unknown as Record<string, unknown>) || m.sentAt;
+  const isOutboundHotel = !isUser;
+  const deliveryStatus = m.status ?? "confirmed";
 
   return (
     <div className={`flex w-full min-w-0 gap-2 sm:gap-2.5 ${isUser ? "justify-start" : "justify-end"}`}>
@@ -660,6 +682,12 @@ function MessageBubble({
             <time className="min-w-0 shrink text-[10px] font-medium tabular-nums text-[#6b665e]">
               {timeLabel}
             </time>
+            {isOutboundHotel &&
+              (deliveryStatus === "pending" ? (
+                <IconCheck className="h-3.5 w-3.5 shrink-0 text-[#9a9388]" aria-label="Enviado" />
+              ) : (
+                <IconCheckCheck className="h-3.5 w-[18px] shrink-0 text-[#9a9388]" aria-label="Entregado" />
+              ))}
             {isAi && m.aiMeta && (
               <span className="max-w-full break-words text-[10px] tabular-nums text-[#6b665e]/80">
                 {m.aiMeta.latencyMs} ms · {m.aiMeta.tokens} tok
@@ -914,10 +942,49 @@ export default function InboxApp() {
 
     if (selectedFile) {
       const selectedFileIsPdf = isPdfFile(selectedFile);
+      const clientTempId = crypto.randomUUID();
+      const pendingSentAtIso = new Date().toISOString();
+      const pendingMessageType = selectedFileIsPdf ? "document" : "image";
+      const optimisticMediaMessage: Message = {
+        id: `local-media-${Date.now()}`,
+        clientTempId,
+        status: "pending",
+        body: text,
+        sentAt: formatMessageDetailTime(pendingSentAtIso),
+        sentAtIso: pendingSentAtIso,
+        sender: "agent",
+        messageType: pendingMessageType,
+        mediaUrl: selectedFileIsPdf ? null : filePreviewUrl,
+        mediaMimeType: selectedFile.type,
+        mediaCaption: text || null,
+        mediaFilename: selectedFile.name,
+      };
+
       setSendingMedia(true);
       setSendWarning(null);
       setFileError(null);
       setActionError(null);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedId
+            ? {
+                ...c,
+                messages: appendConversationMessages(c.messages, optimisticMediaMessage),
+                lastMessagePreview:
+                  text || (selectedFileIsPdf ? `📄 ${selectedFile.name}` : "📷 Imagen"),
+                lastMessageAt: optimisticMediaMessage.sentAt,
+                lastActivityIso: pendingSentAtIso,
+                unreadCount: 0,
+                controlMode: "human",
+                needsHuman: true,
+                aiActive: false,
+                dbStatus: "human_control",
+                operationalStatus:
+                  c.operationalStatus === "closed" ? "closed" : "requires_attention",
+              }
+            : c
+        )
+      );
 
       try {
         const formData = new FormData();
@@ -925,6 +992,7 @@ export default function InboxApp() {
         formData.set("to", normalizePhoneDigits(selectedConv!.guestPhone));
         if (text) formData.set("caption", text);
         formData.set("hotelId", activeHotelId ?? "");
+        formData.set("clientTempId", clientTempId);
         formData.set("file", selectedFile);
 
         const res = await fetch("/api/send-whatsapp-media", {
@@ -952,23 +1020,31 @@ export default function InboxApp() {
         };
 
         if (!res.ok) {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === selectedId
+                ? {
+                    ...c,
+                    messages: c.messages.filter((m) => m.clientTempId !== clientTempId),
+                  }
+                : c
+            )
+          );
           setFileError(j.error ?? "No se pudo enviar el archivo por WhatsApp.");
           return;
         }
 
-        const sentAtIso = j.message?.created_at ?? new Date().toISOString();
-        const messageType = j.message?.message_type ?? j.whatsappType ?? (selectedFileIsPdf ? "document" : "image");
-        const optimisticMediaMessage: Message = {
-          id: String(j.message?.id ?? `local-media-${Date.now()}`),
-          body: text,
+        const sentAtIso = j.message?.created_at ?? pendingSentAtIso;
+        const messageType = j.message?.message_type ?? j.whatsappType ?? pendingMessageType;
+        const confirmedMediaMessage: Message = {
+          ...optimisticMediaMessage,
+          id: String(j.message?.id ?? optimisticMediaMessage.id),
+          status: "confirmed",
           sentAt: formatMessageDetailTime(sentAtIso),
           sentAtIso,
-          sender: "agent",
           messageType,
-          mediaUrl: selectedFileIsPdf ? null : filePreviewUrl,
           mediaStoragePath: j.message?.media_storage_path ?? j.mediaStoragePath ?? null,
           mediaBucket: j.message?.media_bucket ?? j.mediaBucket ?? null,
-          mediaMimeType: j.message?.media_mime_type ?? selectedFile.type,
           mediaCaption: j.message?.media_caption ?? (text || null),
           mediaFilename: j.message?.media_filename ?? j.mediaFilename ?? selectedFile.name,
           metaMediaId: j.message?.media_meta_id ?? j.message?.meta_media_id ?? null,
@@ -979,19 +1055,10 @@ export default function InboxApp() {
             c.id === selectedId
               ? {
                   ...c,
-                  messages: c.messages.some((m) => m.id === optimisticMediaMessage.id)
-                    ? c.messages
-                    : appendConversationMessages(c.messages, optimisticMediaMessage),
+                  messages: upsertConversationMessage(c.messages, confirmedMediaMessage),
                   lastMessagePreview: text || (selectedFileIsPdf ? `📄 ${selectedFile.name}` : "📷 Imagen"),
-                  lastMessageAt: optimisticMediaMessage.sentAt,
+                  lastMessageAt: confirmedMediaMessage.sentAt,
                   lastActivityIso: sentAtIso,
-                  unreadCount: 0,
-                  controlMode: "human",
-                  needsHuman: true,
-                  aiActive: false,
-                  dbStatus: "human_control",
-                  operationalStatus:
-                    c.operationalStatus === "closed" ? "closed" : "requires_attention",
                 }
               : c
           )
@@ -1001,6 +1068,16 @@ export default function InboxApp() {
         clearSelectedFile();
         void refetch({ silent: true });
       } catch {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedId
+              ? {
+                  ...c,
+                  messages: c.messages.filter((m) => m.clientTempId !== clientTempId),
+                }
+              : c
+          )
+        );
         setFileError("Error de red al enviar el archivo.");
       } finally {
         setSendingMedia(false);
@@ -1008,8 +1085,11 @@ export default function InboxApp() {
       return;
     }
 
+    const clientTempId = crypto.randomUUID();
     const newMsg: Message = {
       id: `local-${Date.now()}`,
+      clientTempId,
+      status: "pending",
       body: text,
       sentAt: formatMessageDetailTime(new Date().toISOString()),
       sentAtIso: new Date().toISOString(),
@@ -1048,6 +1128,7 @@ export default function InboxApp() {
           message: text,
           conversationId: selectedConv!.id,
           hotelId: activeHotelId,
+          clientTempId,
         }),
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; skipped?: boolean };

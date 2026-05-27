@@ -166,6 +166,7 @@ export async function POST(request: Request) {
     const caption = String(formData.get("caption") ?? "").trim();
     const hotelIdRaw = String(formData.get("hotelId") ?? "").trim();
     const hotelId = hotelIdRaw || null;
+    const clientTempId = String(formData.get("clientTempId") ?? "").trim() || null;
     const file = formData.get("file");
 
     if (!conversationId) {
@@ -294,6 +295,7 @@ export async function POST(request: Request) {
       recipient: normalizePhoneDigits(toRaw),
       sender,
       conversation_id: conversationId,
+      ...(clientTempId ? { client_temp_id: clientTempId } : {}),
       ...(hotelId ? { hotel_id: hotelId } : {}),
       direction: "outbound",
       origin: "human",

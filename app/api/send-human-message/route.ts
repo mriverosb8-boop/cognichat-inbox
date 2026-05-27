@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       message?: string;
       conversationId?: string;
       hotelId?: string | null;
+      clientTempId?: string;
     };
 
     const guestPhone = body.guestPhone?.trim();
@@ -72,6 +73,8 @@ export async function POST(request: Request) {
 
     const hotelWhatsapp = await readHotelWhatsappConfig(body.hotelId);
 
+    const clientTempId = body.clientTempId?.trim() || null;
+
     const payload = {
       guestPhone,
       message,
@@ -81,6 +84,7 @@ export async function POST(request: Request) {
       whatsappNumber: hotelWhatsapp.whatsappNumber,
       source: "FerrarIA-inbox",
       sentAt: new Date().toISOString(),
+      clientTempId,
     };
 
     const res = await fetch(webhook, {

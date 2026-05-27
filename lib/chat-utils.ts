@@ -742,6 +742,8 @@ export function buildMessageFromWubbyRow(
   const previewRaw = body || (isDocument ? `📄 ${mediaFilename ?? "Documento"}` : isImage ? "📷 Imagen" : "—");
   const causeReqHandoff = readCauseRequest(row);
   const causeOfReq = readCauseOfRequestColumn(row);
+  const clientTempIdRaw = readStringField(row, "client_temp_id", "clientTempId");
+  const clientTempId = clientTempIdRaw?.trim() || undefined;
 
   return {
     message: {
@@ -750,6 +752,7 @@ export function buildMessageFromWubbyRow(
       sentAt: formatMessageDisplayTime(row as Record<string, unknown>),
       sentAtIso: typeof row.created_at === "string" ? row.created_at : String(row.created_at ?? ""),
       sender,
+      ...(clientTempId ? { clientTempId, status: "confirmed" as const } : {}),
       ...(fmt ? { format: fmt } : {}),
       messageType,
       mediaUrl,

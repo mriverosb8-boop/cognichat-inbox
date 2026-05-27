@@ -5,6 +5,9 @@ export type ControlMode = "ai" | "human";
 
 export type MessageSender = "user" | "ai" | "agent";
 
+/** Entrega del mensaje saliente (optimista → confirmado en DB). */
+export type MessageDeliveryStatus = "pending" | "confirmed";
+
 export interface AiMessageMeta {
   latencyMs: number;
   tokens: number;
@@ -66,6 +69,10 @@ export interface Message {
    */
   causeOfRequest?: string;
   aiMeta?: AiMessageMeta;
+  /** UUID generado en cliente; persiste en `Wubby_Whatsapp.client_temp_id`. */
+  clientTempId?: string;
+  /** Solo mensajes salientes creados en cliente; histórico sin campo = confirmado en UI. */
+  status?: MessageDeliveryStatus;
 }
 
 export interface Conversation {
