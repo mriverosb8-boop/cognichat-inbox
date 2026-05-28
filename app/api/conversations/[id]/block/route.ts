@@ -1,0 +1,71 @@
+import { NextResponse } from "next/server";
+import { CONVERSATIONS_TABLE, type ConversationDbRow } from "@/lib/conversation-schema";
+import { requireSessionUser } from "@/lib/auth/require-user";
+import {
+  resolveActiveHotelId,
+  resolveAllowedHotelIds,
+  resolveAvailableHotels,
+} from "@/lib/inbox-tenant";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
+
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const auth = await requireSessionUser();
+    if (auth.response) return auth.response;
+
+    const conversationId = (await context.params).id?.trim();
+    if (!conversationId) {
+      return NextResponse.json({ error: "conversationId es obligatorio" }, { status: 400 });
+    }
+
+    const requestedHotelId = new URL(request.url).searchParams.get("hotelId")?.trim() ?? "";
+
+    const supabase = getSupabaseServerClient();
+    const allowedHotelIds = await resolveAllowedHotelIds(supabase, auth.user);
+    const availableHotels = await resolveAvailableHotels(supabase, allowedHotelIds);
+    const { activeHotelId, forbidden } = resolveActiveHotelId(
+      requestedHotelId,
+      allowedHotelIds,
+      availableHotels
+    );
+
+    if (forbidden) {
+      return NextResponse.json({ error: "No autorizado para este hotel" }, { status: 403 });
+    }
+    if (!activeHotelId) {
+      return NextResponse.json({ error: "hotelId es obligatorio" }, { status: 400 });
+    }
+
+    const blockedAt = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from(CONVERSATIONS_TABLE)
+      .update({
+        blocked: true,
+        blocked_at: blockedAt,
+        updated_at: blockedAt,
+      })
+      .eq("id", conversationId)
+      .eq("hotel_id", activeHotelId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      console.error("[conversations block POST]", error);
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, conversation: data as ConversationDbRow });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error desconocido";
+    console.error("[conversations block POST]", e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

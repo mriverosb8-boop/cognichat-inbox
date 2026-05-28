@@ -33,6 +33,32 @@ const PDF_MIME_TYPE = "application/pdf";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
+function BlockedBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-md bg-[#ebe6e0] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#6b665e] ring-1 ring-[#d4cdc3] ${className}`}
+    >
+      Bloqueado
+    </span>
+  );
+}
+
+function formatBlockedAtColombia(iso: string): string {
+  const parts = new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const day = parts.find((p) => p.type === "day")?.value ?? "";
+  const month = (parts.find((p) => p.type === "month")?.value ?? "").replace(/\.$/, "");
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "";
+  return `Bloqueado el ${day} de ${month}, ${hour}:${minute}`;
+}
+
 function isPdfFile(file: File | null): boolean {
   return file?.type === PDF_MIME_TYPE;
 }
@@ -740,6 +766,10 @@ export default function InboxApp() {
   const [resolvingRequest, setResolvingRequest] = useState(false);
   const [globalActionsOpen, setGlobalActionsOpen] = useState(false);
   const [startConversationOpen, setStartConversationOpen] = useState(false);
+  const [moderationDialogAction, setModerationDialogAction] = useState<"block" | "unblock" | null>(
+    null
+  );
+  const [moderationInProgress, setModerationInProgress] = useState(false);
   const [templateToast, setTemplateToast] = useState<{
     type: "success" | "error";
     message: string;
@@ -762,6 +792,7 @@ export default function InboxApp() {
 
   useEffect(() => {
     setActionError(null);
+    setModerationDialogAction(null);
   }, [selectedId]);
 
   useEffect(() => {
@@ -1318,6 +1349,69 @@ export default function InboxApp() {
     }
   };
 
+  const applyConversationModeration = async (action: "block" | "unblock") => {
+    if (!selectedId || !selected) return;
+    if (action === "block" && selected.blocked) return;
+    if (action === "unblock" && !selected.blocked) return;
+
+    const hotelId = (activeHotelId ?? resolvedActiveHotelId)?.trim();
+    if (!hotelId) {
+      setActionError(
+        action === "block"
+          ? "Selecciona un hotel antes de bloquear la conversación."
+          : "Selecciona un hotel antes de desbloquear la conversación."
+      );
+      return;
+    }
+
+    setModerationInProgress(true);
+    setActionError(null);
+    try {
+      const params = new URLSearchParams({ hotelId });
+      const res = await fetch(`/api/conversations/${selectedId}/${action}?${params}`, {
+        method: "POST",
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        conversation?: { blocked?: boolean; blocked_at?: string | null };
+      };
+      if (!res.ok) {
+        setActionError(
+          j.error ??
+            (action === "block"
+              ? "No se pudo bloquear la conversación"
+              : "No se pudo desbloquear la conversación")
+        );
+        return;
+      }
+
+      const isBlocked = action === "block";
+      const blockedAt = isBlocked
+        ? (j.conversation?.blocked_at ?? new Date().toISOString())
+        : null;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedId
+            ? {
+                ...c,
+                blocked: isBlocked,
+                blockedAt,
+              }
+            : c
+        )
+      );
+      setModerationDialogAction(null);
+    } catch {
+      setActionError(
+        action === "block"
+          ? "Error de red al bloquear la conversación"
+          : "Error de red al desbloquear la conversación"
+      );
+    } finally {
+      setModerationInProgress(false);
+    }
+  };
+
   const resolveRequest = async () => {
     if (!selectedId) return;
     const conv = conversations.find((c) => c.id === selectedId);
@@ -1376,7 +1470,7 @@ export default function InboxApp() {
   if (loading && conversations.length === 0) {
     return (
       <div className="flex h-[100dvh] flex-col items-center justify-center gap-3 bg-[#f7f4ee] text-[#6b665e]">
-        <p className="text-sm font-medium">Cargando conversaciones desde Supabase…</p>
+        <p className="text-sm font-medium">Cargando conversaciones…</p>
       </div>
     );
   }
@@ -1635,11 +1729,14 @@ export default function InboxApp() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <span
-                        className={`block truncate text-[15px] leading-tight ${hasUnread || isPending ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
-                      >
-                        {c.guest.name}
-                      </span>
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span
+                          className={`truncate text-[15px] leading-tight ${hasUnread || isPending ? "font-semibold text-[#1f1f1c]" : "font-medium text-[#3d3a36]"}`}
+                        >
+                          {c.guest.name}
+                        </span>
+                        {c.blocked && <BlockedBadge />}
+                      </div>
                       <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-[#6b665e] group-hover:text-[#4a4742]">
                         {c.lastMessagePreview}
                       </p>
@@ -1715,6 +1812,7 @@ export default function InboxApp() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="truncate text-[15px] font-semibold text-[#1f1f1c]">{selected.guest.name}</h2>
+                    {selected.blocked && <BlockedBadge />}
                     <span
                       className={`hidden shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide sm:inline-flex ${operationalConfig[selected.operationalStatus].chip}`}
                     >
@@ -1732,11 +1830,27 @@ export default function InboxApp() {
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-[#6b665e]">
-                    <IconWhatsApp className="h-3.5 w-3.5 shrink-0 text-[#7d9a7a]" aria-hidden />
-                    <span className="truncate">WhatsApp</span>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-[#6b665e]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <IconWhatsApp className="h-3.5 w-3.5 shrink-0 text-[#7d9a7a]" aria-hidden />
+                      <span className="truncate">WhatsApp</span>
+                    </span>
+                    {selected.blocked && selected.blockedAt && (
+                      <span className="text-[11px] text-[#9c968c]">
+                        {formatBlockedAtColombia(selected.blockedAt)}
+                      </span>
+                    )}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModerationDialogAction(selected.blocked ? "unblock" : "block")
+                  }
+                  className="inline-flex h-9 shrink-0 items-center rounded-lg border border-[#e7dfd4] bg-white px-2.5 text-[11px] font-semibold text-[#6b665e] shadow-sm transition hover:bg-[#f1ece4]"
+                >
+                  {selected.blocked ? "Desbloquear" : "Bloquear"}
+                </button>
                 <button
                   type="button"
                   onClick={() => setGuestOpen(true)}
@@ -1951,6 +2065,58 @@ export default function InboxApp() {
                 onReopen={reopenConversation}
                 resolvingRequest={resolvingRequest}
               />
+            </div>
+          </div>
+        </div>
+      )}
+      {moderationDialogAction && selected && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="moderation-dialog-title"
+          onClick={() => !moderationInProgress && setModerationDialogAction(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-[#e7dfd4] bg-white p-5 shadow-xl ring-1 ring-black/[0.06]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="moderation-dialog-title" className="text-[15px] font-semibold text-[#1f1f1c]">
+              {moderationDialogAction === "block" ? "Bloquear conversación" : "Desbloquear conversación"}
+            </h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-[#6b665e]">
+              {moderationDialogAction === "block" ? (
+                <>
+                  ¿Bloquear a {selected.guest.name || selected.guestPhone}? Esta acción se puede revertir
+                  desde el inbox o Supabase.
+                </>
+              ) : (
+                <>¿Desbloquear a {selected.guest.name || selected.guestPhone}?</>
+              )}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={moderationInProgress}
+                onClick={() => setModerationDialogAction(null)}
+                className="rounded-lg border border-[#e7dfd4] px-3 py-2 text-[13px] font-semibold text-[#6b665e] transition hover:bg-[#f1ece4] disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={moderationInProgress}
+                onClick={() => void applyConversationModeration(moderationDialogAction)}
+                className="rounded-lg bg-[#4a4742] px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-[#1f1f1c] disabled:opacity-50"
+              >
+                {moderationInProgress
+                  ? moderationDialogAction === "block"
+                    ? "Bloqueando…"
+                    : "Desbloqueando…"
+                  : moderationDialogAction === "block"
+                    ? "Bloquear"
+                    : "Desbloquear"}
+              </button>
             </div>
           </div>
         </div>

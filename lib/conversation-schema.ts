@@ -3,6 +3,7 @@ export const CONVERSATIONS_TABLE = "conversations";
 
 export type ConversationDbRow = {
   id: string;
+  hotel_id?: string | null;
   guest_phone: string | null;
   guest_name: string | null;
   status: string | null;
